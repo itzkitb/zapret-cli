@@ -1,6 +1,6 @@
 ﻿# 👽⚡ Zapret CLI
 
-A powerful console application for bypassing DPI (Deep Packet Inspection) on Windows using zapret. Designed for ease of use with comprehensive profile management
+A powerful console application for bypassing DPI (Deep Packet Inspection) on Windows using zapret. Designed for ease of use with comprehensive profile management. Original [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) by [Flowseal](https://github.com/Flowseal/) (configs) & [zapret-win-bundle](https://github.com/bol-van/zapret-win-bundle) by [bol-van](https://github.com/bol-van/)
 
 ### 🔧 Core Functionality
 - DPI bypass with multiple configuration profiles
