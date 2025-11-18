@@ -2,10 +2,31 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+	<VersionPrefix>1.0.0</VersionPrefix>
+	<Authors>SillyApps</Authors>
+	<Description>Donate: https://boosty.to/itzkitb</Description>
+	<PackageProjectUrl></PackageProjectUrl>
+	<PackageIcon>zapret-cli-logo.ico</PackageIcon>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<RepositoryUrl>https://github.com/itzkitb/zapret-cli</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageLicenseFile>LICENSE</PackageLicenseFile>
+	<ApplicationIcon>zapret-cli-logo.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="zapret-cli-logo.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="C:\Users\siste\Downloads\zapret-cli-logo.ico">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
@@ -14,6 +35,17 @@
     <PackageReference Include="Pastel" Version="7.0.1" />
     <PackageReference Include="SharpCompress" Version="0.41.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="LICENSE">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
