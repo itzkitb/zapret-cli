@@ -70,7 +70,7 @@ game-filter-status   Show current game filter status
 ## 👥 Contributing
 
 Contributions are welcome! You can help by:
-- Reporting bugs and suggesting features via [Issues](https://github.com/itzkitb/zapret-cliissues)
+- Reporting bugs and suggesting features via [Issues](https://github.com/itzkitb/zapret-cli/issues)
 - Submitting pull requests with improvements
 - Testing new releases and providing feedback
 - Improving documentation
@@ -82,7 +82,7 @@ This project is distributed under the MIT License. See the [LICENSE](LICENSE) fi
 ## 📞 Support
 
 If you encounter any issues or have questions:
-- Create an issue in the [GitHub repository](https://github.com/itzkitb/zapret-cliissues)
+- Create an issue in the [GitHub repository](https://github.com/itzkitb/zapret-cli/issues)
 - Twitch: [https://twitch.tv/itzkitb](https://twitch.tv/itzkitb)
 - Email: [itzkitb@gmail.com](mailto:itzkitb@gmail.com)
 - Donate: [My Boosty](https://boosty.to/itzkitb)
