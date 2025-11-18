@@ -18,14 +18,14 @@ A powerful console application for bypassing DPI (Deep Packet Inspection) on Win
 ## 📦 Installation
 
 ### Option 1: Pre-built Release (Recommended)
-1. Download the latest release from the [Releases page](https://github.com/Flowseal/zapret-discord-youtube/releases)
+1. Download the latest release from the [Releases page](https://github.com/itzkitb/zapret-cli/releases)
 2. Run `Installer.exe` **as Administrator**
 
 ### Option 2: Build from Source
 1. Install [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 2. Clone the repository:
    ```bash
-   git clone https://github.com/Flowseal/zapret-discord-youtube.git
+   git clone https://github.com/itzkitb/zapret-cli.git
    cd zapret-discord-youtube
    ```
 3. Build the application:
@@ -70,7 +70,7 @@ game-filter-status   Show current game filter status
 ## 👥 Contributing
 
 Contributions are welcome! You can help by:
-- Reporting bugs and suggesting features via [Issues](https://github.com/Flowseal/zapret-discord-youtube/issues)
+- Reporting bugs and suggesting features via [Issues](https://github.com/itzkitb/zapret-cliissues)
 - Submitting pull requests with improvements
 - Testing new releases and providing feedback
 - Improving documentation
@@ -82,9 +82,10 @@ This project is distributed under the MIT License. See the [LICENSE](LICENSE) fi
 ## 📞 Support
 
 If you encounter any issues or have questions:
-- Create an issue in the [GitHub repository](https://github.com/Flowseal/zapret-discord-youtube/issues)
+- Create an issue in the [GitHub repository](https://github.com/itzkitb/zapret-cliissues)
 - Twitch: [https://twitch.tv/itzkitb](https://twitch.tv/itzkitb)
 - Email: [itzkitb@gmail.com](mailto:itzkitb@gmail.com)
+- Donate: [My Boosty](https://boosty.to/itzkitb)
 
 ---
 
