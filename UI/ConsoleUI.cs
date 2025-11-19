@@ -18,7 +18,7 @@ namespace ZapretCLI.UI
         public const string purple = "#B7A3E3";
         public const string white = "#E3E3E3";
         public const string green = "#CBF3BB";
-        public static readonly Version version = new("1.0");
+        public static readonly Version version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
 
         public static void WriteLine(string text, string color = white, bool save = true)
         {
