@@ -106,6 +106,7 @@ namespace ZapretCLI.UI
             WriteLine("  info           - Show details of currently selected profile", white);
             WriteLine("  list           - List all available profiles", white);
             WriteLine("  test           - Launches a check of profiles suitable for bypassing blocking", white);
+            WriteLine("  del-service    - Stop the service and remove the drivers. Especially useful when deleting 'WinDivert64.sys'", white);
             WriteLine("  toggle-game-filter - Toggle game filter mode (ports 1024-65535 vs port 12)", white);
             WriteLine("  game-filter-status - Show current game filter status", white);
             WriteLine("  exit           - Stop the service and exit", white);

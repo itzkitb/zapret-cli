@@ -6,5 +6,6 @@
         Task DownloadLatestReleaseAsync();
         Task CheckForCliUpdatesAsync();
         Task UpdateCliAsync();
+        void StopServicesAndProcesses();
     }
 }

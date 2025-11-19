@@ -36,25 +36,42 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                var release = await GetLatestRelease();
-                var currentVersion = GetCurrentVersion();
-
-                if (release != null && currentVersion != release.TagName)
+                var versionFile = Path.Combine(_appPath, "VERSION");
+                if (File.Exists(versionFile))
                 {
-                    ConsoleUI.WriteLine($"[!] New version available: {release.TagName}", ConsoleUI.yellow);
-                    ConsoleUI.WriteLine($"Current version: {currentVersion}", ConsoleUI.yellow);
+                    var release = await GetLatestRelease();
+                    var currentVersion = GetCurrentVersion();
+                    var newVersion = new Version(release.TagName.Replace("b", "").Replace("a", ""));
 
-                    var shortChangelog = release.Body.Length > 200
-                        ? release.Body.Substring(0, 200) + "..."
-                        : release.Body;
-                    ConsoleUI.WriteLine($"Changelog: {shortChangelog}", ConsoleUI.yellow);
+                    if (release != null && currentVersion < newVersion)
+                    {
 
-                    ConsoleUI.WriteLine("\nType 'update' to install the latest version", ConsoleUI.blue);
+                        ConsoleUI.WriteLine($"[!] New version of Zapret available: {release.TagName}", ConsoleUI.yellow);
+                        ConsoleUI.WriteLine($"Current version: {currentVersion}\nNew version: {newVersion}", ConsoleUI.yellow);
+
+                        var shortChangelog = release.Body.Length > 200
+                            ? release.Body.Substring(0, 200) + "..."
+                            : release.Body;
+                        ConsoleUI.WriteLine($"Changelog: {shortChangelog}", ConsoleUI.yellow);
+
+
+                        var result = ConsoleUI.ReadLineWithPrompt("Update? (Y/N): ");
+                        if (result.Contains("Y", StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            await DownloadLatestReleaseAsync();
+                        }
+                    }
+                }
+                else
+                {
+                    ConsoleUI.WriteLine($"It looks like this is your first launch. Installing the latest version of Zapret...", ConsoleUI.yellow);
+                    await DownloadLatestReleaseAsync();
                 }
             }
             catch (Exception ex)
             {
                 ConsoleUI.WriteLine($"[!] Failed to check updates: {ex.Message}", ConsoleUI.red);
+                await Task.Delay(500);
             }
         }
 
@@ -64,20 +81,28 @@ namespace ZapretCLI.Core.Services
             {
                 var release = await GetLatestCliRelease();
                 var currentVersion = GetCliVersion();
-                if (release != null && !string.Equals(currentVersion, release.TagName, StringComparison.OrdinalIgnoreCase))
+                var newVersion = new Version(release.TagName);
+
+                if (release != null && currentVersion < newVersion)
                 {
                     ConsoleUI.WriteLine($"[!] New version of Zapret CLI available: {release.TagName}", ConsoleUI.yellow);
-                    ConsoleUI.WriteLine($"Current version: {currentVersion}", ConsoleUI.yellow);
+                    ConsoleUI.WriteLine($"Current version: {currentVersion}\nNew version: {newVersion}", ConsoleUI.yellow);
                     var shortChangelog = release.Body.Length > 200
                         ? release.Body.Substring(0, 200) + "..."
                         : release.Body;
                     ConsoleUI.WriteLine($"Changelog: {shortChangelog}", ConsoleUI.yellow);
-                    ConsoleUI.WriteLine("\nType 'update-cli' to install the latest version", ConsoleUI.blue);
+                    ConsoleUI.WriteLine("\n", ConsoleUI.blue);
+                    var result = ConsoleUI.ReadLineWithPrompt("Update? (Y/N): ");
+                    if (result.Contains("Y", StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        await UpdateCliAsync();
+                    }
                 }
             }
             catch (Exception ex)
             {
                 ConsoleUI.WriteLine($"[!] Failed to check CLI updates: {ex.Message}", ConsoleUI.red);
+                await Task.Delay(500);
             }
         }
 
@@ -98,9 +123,9 @@ namespace ZapretCLI.Core.Services
             }
         }
 
-        private string GetCliVersion()
+        private Version GetCliVersion()
         {
-            return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         }
 
         public async Task UpdateCliAsync()
@@ -253,6 +278,7 @@ namespace ZapretCLI.Core.Services
                 ConsoleUI.WriteLine("  [✓] Download completed!", ConsoleUI.green);
 
                 await ExtractArchive(downloadPath, tempDir);
+                ConsoleUI.WriteLine("");
                 StopServicesAndProcesses();
                 await CopyFiles(tempDir);
                 await CleanupTempFiles(tempDir);
@@ -266,23 +292,22 @@ namespace ZapretCLI.Core.Services
             }
         }
 
-        private void StopServicesAndProcesses()
+        public void StopServicesAndProcesses()
         {
             try
             {
-                ConsoleUI.WriteLine("\nStopping services and processes...", ConsoleUI.yellow);
+                ConsoleUI.WriteLine("Stopping services and processes...", ConsoleUI.yellow);
 
                 KillProcessByName("winws.exe");
                 StopAndDeleteService("zapret");
                 StopAndDeleteService("WinDivert");
                 StopAndDeleteService("WinDivert14");
 
-                ConsoleUI.WriteLine("  [✓] Services and processes stopped successfully", ConsoleUI.green);
+                ConsoleUI.WriteLine("[✓] Services and processes stopped successfully", ConsoleUI.green);
             }
             catch (Exception ex)
             {
                 ConsoleUI.WriteLine($"[!] Warning: Failed to stop some services/processes: {ex.Message}", ConsoleUI.yellow);
-                ConsoleUI.WriteLine("Update may require manual restart of services after completion", ConsoleUI.yellow);
             }
         }
 
@@ -391,10 +416,10 @@ namespace ZapretCLI.Core.Services
             }
         }
 
-        private string GetCurrentVersion()
+        private Version GetCurrentVersion()
         {
             var versionFile = Path.Combine(_appPath, "VERSION");
-            return File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "1.0.0";
+            return File.Exists(versionFile) ? new Version(File.ReadAllText(versionFile).Trim().Replace("b", "").Replace("a", "")) : new Version("1.0.0");
         }
 
         private async Task ExtractArchive(string archivePath, string tempDir)

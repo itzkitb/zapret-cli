@@ -201,6 +201,9 @@ namespace ZapretCLI
                         ConsoleUI.WriteLine($"Game filter is currently {(zapretManager.IsGameFilterEnabled() ? "ENABLED" : "DISABLED")}",
                             zapretManager.IsGameFilterEnabled() ? ConsoleUI.green : ConsoleUI.yellow);
                         break;
+                    case "del-service":
+                        updateService.StopServicesAndProcesses();
+                        break;
                     case "restart":
                         await zapretManager.StopAsync();
                         await Task.Delay(1000);
