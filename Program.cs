@@ -27,18 +27,21 @@ namespace ZapretCLI
         {
             try
             {
-                ConfigureMinimalLogger();
+                if (IsAdministrator())
+                {
+                    ConfigureMinimalLogger();
 
-                AppDomain.CurrentDomain.UnhandledException += (s, e) =>
-                {
-                    var exception = e.ExceptionObject as Exception;
-                    Log.Fatal(exception, "Unhandled exception occurred");
-                };
-                TaskScheduler.UnobservedTaskException += (s, e) =>
-                {
-                    Log.Error(e.Exception, "Unobserved task exception");
-                    e.SetObserved();
-                };
+                    AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                    {
+                        var exception = e.ExceptionObject as Exception;
+                        Log.Fatal(exception, "Unhandled exception occurred");
+                    };
+                    TaskScheduler.UnobservedTaskException += (s, e) =>
+                    {
+                        Log.Error(e.Exception, "Unobserved task exception");
+                        e.SetObserved();
+                    };
+                }
 
                 // OS and administrator rights checks
                 if (!await InitializeApplicationAsync(args))
@@ -338,7 +341,6 @@ namespace ZapretCLI
                     AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Failed to restart as administrator: {ex.Message}[/]");
                 }
 
-                Log.Error(ex, "Failed to restart as administrator");
                 throw;
             }
         }
