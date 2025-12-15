@@ -9,5 +9,6 @@ namespace ZapretCLI.Core.Interfaces
         Task SaveProfile(ZapretProfile profile);
         Task<List<ZapretProfile>> GetAvailableProfilesAsync();
         Task<ZapretProfile> GetProfileByName(string name);
+        void Dispose();
     }
 }

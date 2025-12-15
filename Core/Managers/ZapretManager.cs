@@ -1,6 +1,7 @@
-﻿using System.Diagnostics;
-using System.Text.Json;
+﻿using Spectre.Console;
+using System.Diagnostics;
 using ZapretCLI.Core.Interfaces;
+using ZapretCLI.Core.Logging;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
@@ -13,22 +14,29 @@ namespace ZapretCLI.Core.Managers
         private readonly IProcessService _processService;
         private readonly IStatusService _statusService;
         private readonly IProfileService _profileService;
+        private readonly ILocalizationService _localizationService;
+        private readonly IConfigService _configService;
+        private readonly ILoggerService _logger;
+
         private ZapretProfile _currentProfile;
         private List<ZapretProfile> _availableProfiles = new List<ZapretProfile>();
         private bool _gameFilterEnabled = false;
 
-        public ZapretManager(string appPath, IProcessService processService, IStatusService statusService, IProfileService profileService)
+        public ZapretManager(string appPath, IProcessService prs, IStatusService ss, IProfileService ps, ILocalizationService ls, IConfigService cs, ILoggerService logs)
         {
             _appPath = appPath;
 
-            _processService = processService;
-            _statusService = statusService;
-            _profileService = profileService;
+            _processService = prs;
+            _statusService = ss;
+            _profileService = ps;
+            _localizationService = ls;
+            _configService = cs;
+            _logger = logs;
 
             _processService.OutputLineReceived += (sender, line) => _statusService.ProcessOutputLine(line);
             _processService.ErrorLineReceived += (sender, line) => _statusService.ProcessOutputLine(line);
 
-            _gameFilterEnabled = LoadGameFilterSetting();
+            _gameFilterEnabled = _configService.GetConfig().GameFilterEnabled;
         }
 
         public async Task InitializeAsync()
@@ -40,7 +48,6 @@ namespace ZapretCLI.Core.Managers
         {
             if (!IsRunning())
             {
-                if (showLogs) ConsoleUI.WriteLine("[!] Zapret is not running!", ConsoleUI.yellow);
                 return;
             }
 
@@ -48,24 +55,28 @@ namespace ZapretCLI.Core.Managers
             {
                 await _processService.StopZapretAsync(_zapretProcess);
                 _zapretProcess = null;
-                if (showLogs) ConsoleUI.WriteLine("[✓] Zapret stopped successfully!", ConsoleUI.green);
+                if (showLogs) AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("zapret_stop")}[/]");
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Failed to stop zapret: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_stop_fail"), ex.Message)}[/]");
             }
         }
 
         public async Task ShowStatusAsync()
         {
-            var status = IsRunning() ? "Running" : "Stopped";
-            var color = IsRunning() ? ConsoleUI.green : ConsoleUI.red;
+            var status = IsRunning() ? _localizationService.GetString("running") : _localizationService.GetString("stopped");
+            var color = IsRunning() ? ConsoleUI.greenName : ConsoleUI.redName;
 
-            ConsoleUI.WriteLine("Status:", ConsoleUI.yellow);
-            ConsoleUI.WriteLine($"  Status: {status} (PID: {_zapretProcess?.Id ?? 0})", color);
-            ConsoleUI.WriteLine($"  Working directory: '{_appPath}'");
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("service_status")}[/]\n");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("status")}: [{color}]{status}[/] [{ConsoleUI.greyName}](PID: {_zapretProcess?.Id ?? 0})[/]");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("working_directory")}: [{ConsoleUI.greenName}]'{_appPath}'[/]");
 
             await _statusService.DisplayStatusAsync();
+            ShowProfileInfo();
+
+            AnsiConsole.MarkupLine($"\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("press_any_key")}[/]");
+            Console.ReadKey(true);
         }
 
         public async Task LoadAvailableProfilesAsync()
@@ -75,7 +86,7 @@ namespace ZapretCLI.Core.Managers
                 _availableProfiles = await _profileService.GetAvailableProfilesAsync();
                 if (_availableProfiles.Count == 0)
                 {
-                    ConsoleUI.WriteLine("[!] No profiles available. Please update the application.", ConsoleUI.yellow);
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles")}[/]");
                 }
             }
 
@@ -89,60 +100,33 @@ namespace ZapretCLI.Core.Managers
 
             if (_availableProfiles.Count == 0)
             {
-                ConsoleUI.WriteLine("[!] No profiles available. Updating...", ConsoleUI.yellow);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("updating_no_profiles")}[/]");
                 await Program.UpdateProfiles();
                 await LoadAvailableProfilesAsync();
             }
 
             if (_availableProfiles.Count == 0)
             {
-                ConsoleUI.WriteLine("[✗] No profiles available after update. Something went wrong?", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles_after_update")}[/]");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(profileName))
             {
-                ConsoleUI.Clear(false);
-                ConsoleUI.WriteLine("Available profiles:", ConsoleUI.yellow, false);
+                ConsoleUI.Clear();
 
-                int selectedIndex = _currentProfile != null
-                    ? _availableProfiles.IndexOf(_currentProfile)
-                    : 0;
+                var profileNames = _availableProfiles.Select(p => p.Name).ToList();
+                var selectedProfile = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title($"[{ConsoleUI.greenName}]{_localizationService.GetString("available_profiles")}[/]\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("navigation")}[/]")
+                        .AddChoices(profileNames)
+                        .PageSize(10)
+                        .MoreChoicesText($"[{ConsoleUI.greyName}]({_localizationService.GetString("other_options")})[/]")
+                        .HighlightStyle(new Style(Color.PaleGreen1))
+                );
 
-                if (selectedIndex < 0) selectedIndex = 0;
-
-                DrawMenu(selectedIndex);
-
-                while (true)
-                {
-                    var key = Console.ReadKey(true);
-                    if (key.Key == ConsoleKey.UpArrow && selectedIndex > 0)
-                    {
-                        selectedIndex--;
-                        DrawMenu(selectedIndex);
-                    }
-                    else if (key.Key == ConsoleKey.DownArrow && selectedIndex < _availableProfiles.Count - 1)
-                    {
-                        selectedIndex++;
-                        DrawMenu(selectedIndex);
-                    }
-                    else if (key.Key == ConsoleKey.Enter)
-                    {
-                        break;
-                    }
-                }
-
-                // Clearing the menu area
-                int menuHeight = _availableProfiles.Count + 2;
-
-                for (int i = 0; i < menuHeight; i++)
-                {
-                    Console.SetCursorPosition(0, 1 + i);
-                    Console.Write(new string(' ', Console.WindowWidth));
-                }
-
-                Console.SetCursorPosition(0, 1);
-                _currentProfile = _availableProfiles[selectedIndex];
+                _currentProfile = _availableProfiles.FirstOrDefault(p =>
+                    p.Name.Equals(selectedProfile, StringComparison.OrdinalIgnoreCase));
             }
             else
             {
@@ -151,37 +135,10 @@ namespace ZapretCLI.Core.Managers
 
                 if (_currentProfile == null)
                 {
-                    ConsoleUI.WriteLine($"[✗] Profile '{profileName}' not found.", ConsoleUI.red);
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("profile_not_found"), profileName)}[/]");
                     return;
                 }
             }
-
-            ConsoleUI.Clear(false);
-            ConsoleUI.HistoryRestore();
-
-            /*if (_currentProfile != null)
-            {
-                ConsoleUI.WriteLine($"[✓] Selected profile: '{_currentProfile.Name}'", ConsoleUI.green);
-            }*/
-        }
-
-        private void DrawMenu(int index)
-        {
-            Console.SetCursorPosition(0, 1);
-
-            for (int i = 0; i < _availableProfiles.Count; i++)
-            {
-                var profile = _availableProfiles[i];
-                string prefix = i == index ? "► " : "  ";
-                string color = i == index ? ConsoleUI.green : ConsoleUI.white;
-                ConsoleUI.WriteLine($"{prefix}{$"{i + 1}.",-3} {profile.Name}", color, false);
-            }
-
-            // Instructions
-            Console.SetCursorPosition(0, 1 + _availableProfiles.Count + 1);
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("Use arrow keys to navigate, press Enter to select", ConsoleUI.blue);
-            Console.ResetColor();
         }
 
         public async Task<bool> StartAsync(bool showLogs = true)
@@ -194,14 +151,13 @@ namespace ZapretCLI.Core.Managers
 
             if (IsRunning())
             {
-                if (showLogs) ConsoleUI.WriteLine("[!] Zapret is already running!", ConsoleUI.yellow);
-                return false;
+                return true;
             }
 
             try
             {
                 var tcs = new TaskCompletionSource<bool>();
-                var timeout = TimeSpan.FromSeconds(15);
+                var timeout = TimeSpan.FromSeconds(5);
                 var cancellationTokenSource = new CancellationTokenSource(timeout);
 
                 EventHandler handler = (sender, args) => tcs.TrySetResult(true);
@@ -219,20 +175,19 @@ namespace ZapretCLI.Core.Managers
 
                 if (completedTask != tcs.Task)
                 {
-                    ConsoleUI.WriteLine($"[!] Timeout waiting for windivert initialization ({timeout.Seconds} seconds)", ConsoleUI.yellow);
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_start_timeout"), timeout.Seconds)}[/]");
                     await StopAsync();
                     return false;
                 }
 
-                if (showLogs) { 
-                    ConsoleUI.WriteLine($"[✓] Zapret started successfully with profile '{_currentProfile.Name}'!", ConsoleUI.green);
-                    await ShowStatusAsync();
+                if (showLogs) {
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{String.Format(_localizationService.GetString("zapret_start"), _currentProfile.Name)}[/]");
                 }
                 return true;
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Failed to start zapret: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_start_fail"), ex.Message)}[/]");
                 return false;
             }
         }
@@ -241,55 +196,19 @@ namespace ZapretCLI.Core.Managers
         {
             if (_currentProfile == null)
             {
-                ConsoleUI.WriteLine("[!] No profile selected", ConsoleUI.yellow);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("profile_not_selected")}[/]");
                 return;
             }
 
-            ConsoleUI.WriteLine($"Profile: '{_currentProfile.Name}'", ConsoleUI.blue);
-            ConsoleUI.WriteLine($"Description: '{_currentProfile.Description}'", ConsoleUI.blue);
-            ConsoleUI.WriteLine($"Arguments:", ConsoleUI.blue);
-
-            foreach (var arg in _currentProfile.Arguments)
-            {
-                ConsoleUI.WriteLine($"  {arg}", ConsoleUI.white);
-            }
-        }
-
-        private bool LoadGameFilterSetting()
-        {
-            var settingsFile = Path.Combine(_appPath, "settings.json");
-            if (File.Exists(settingsFile))
-            {
-                try
-                {
-                    var settings = JsonSerializer.Deserialize<Dictionary<string, bool>>(
-                        File.ReadAllText(settingsFile));
-                    return settings != null && settings.TryGetValue("gameFilter", out var enabled) && enabled;
-                }
-                catch
-                {
-                    return false;
-                }
-            }
-            return false;
-        }
-
-        private void SaveGameFilterSetting(bool enabled)
-        {
-            var settingsFile = Path.Combine(_appPath, "settings.json");
-            var settings = new Dictionary<string, bool> { { "gameFilter", enabled } };
-            File.WriteAllText(settingsFile, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("profile")}: [{ConsoleUI.greenName}]'{_currentProfile.Name}'[/]");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("description")}: [{ConsoleUI.greyName}]'{_currentProfile.Description}'[/]");
         }
 
         public void ToggleGameFilter()
         {
             _gameFilterEnabled = !_gameFilterEnabled;
             _processService.SetGameFilter(_gameFilterEnabled);
-            SaveGameFilterSetting(_gameFilterEnabled);
-
-            ConsoleUI.WriteLine($"Game filter is now {(_gameFilterEnabled ? "enabled" : "disabled")}",
-                _gameFilterEnabled ? ConsoleUI.green : ConsoleUI.yellow);
-            ConsoleUI.WriteLine("[!] Service restart is required for changes to take effect", ConsoleUI.yellow);
+            _configService.UpdateGameFilter(_gameFilterEnabled);
         }
 
         public bool IsRunning()
@@ -314,125 +233,112 @@ namespace ZapretCLI.Core.Managers
             var initialProfile = _currentProfile;
             if (IsRunning()) await StopAsync(false);
 
-            ConsoleUI.WriteLine("Profile Testing", ConsoleUI.yellow);
-            ConsoleUI.WriteLine("[!] Close all third-party applications for the best testing experience (e.g. Discord, VPN, etc.)", ConsoleUI.yellow);
-            ConsoleUI.WriteLine("---------------", ConsoleUI.yellow);
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profile_testing_title")}[/]");
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greyName}]{_localizationService.GetString("close_apps_warning")}[/]\n");
 
-            var domain = ConsoleUI.ReadLineWithPrompt("Enter a blocked domain for testing (e.g., example.com): ").Trim();
+            var domain = AnsiConsole.Prompt(new TextPrompt<string>($"[{ConsoleUI.greenName}]{_localizationService.GetString("test_domain_ask")}[/] [{ConsoleUI.greyName}](example.com)[/]:"));
+
             if (string.IsNullOrWhiteSpace(domain))
             {
-                ConsoleUI.WriteLine("[!] Domain cannot be empty", ConsoleUI.red);
-                return;
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("empty_domain")}[/]");
             }
-
-            // Checking if a domain is really blocked (without bypassing it)
-            ConsoleUI.WriteLine("\nChecking if the domain is actually blocked...", ConsoleUI.blue);
             bool isBlocked = await IsDomainBlocked(domain);
+
             if (!isBlocked)
             {
-                ConsoleUI.WriteLine($"[!] Warning: {domain} appears to be accessible without bypass. Testing may not be accurate.", ConsoleUI.yellow);
-                ConsoleUI.WriteLine("Continue anyway? (y/n): ", ConsoleUI.yellow);
-                var response = Console.ReadLine()?.Trim().ToLower();
-                if (response != "y" && response != "yes")
-                {
+                AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("domain_accessible_warning")}[/]", domain);
+                if (!AnsiConsole.Confirm(_localizationService.GetString("continue_anyway")))
                     return;
-                }
             }
 
             await LoadAvailableProfilesAsync();
-            if (_availableProfiles.Count == 0)
+            if (!_availableProfiles.Any())
             {
-                ConsoleUI.WriteLine("[!] No profiles available to test", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles_to_test")}[/]");
                 return;
             }
 
             var results = new List<(string ProfileName, bool Success, string Message)>();
-            var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             string testUrl = $"https://{domain}";
 
-            ConsoleUI.WriteLine($"\nStarting tests for {domain} with {_availableProfiles.Count} profiles...", ConsoleUI.blue);
-            ConsoleUI.WriteLine("-------------------------------------------------------------", ConsoleUI.blue);
+            await ListManager.AddDomainToFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lists", "list-general.txt"), domain, _localizationService, _logger);
+
+            AnsiConsole.MarkupLine($"\n[{ConsoleUI.greyName}]{_localizationService.GetString("starting_tests")}[/]", $"[/][{ConsoleUI.greenName}]{domain}[/][{ConsoleUI.greyName}]", $"[/][{ConsoleUI.greenName}]{_availableProfiles.Count}[/][{ConsoleUI.greyName}]");
+            AnsiConsole.MarkupLine($"[{ConsoleUI.darkGreyName}]--------------------[/]");
 
             foreach (var profile in _availableProfiles)
             {
-                ConsoleUI.WriteLine($"\nTesting profile: {profile.Name}", ConsoleUI.yellow);
-
+                AnsiConsole.MarkupLine($"\n[{ConsoleUI.orangeName}]{_localizationService.GetString("testing_profile")}[/]", profile.Name);
                 if (IsRunning()) await StopAsync(false);
                 _currentProfile = profile;
 
                 try
                 {
-                    // Launch the profile and wait for initialization.
                     if (!await StartAsync(false))
                     {
-                        results.Add((profile.Name, false, "Failed to initialize"));
+                        results.Add((profile.Name, false, _localizationService.GetString("init_failed")));
                         continue;
                     }
 
-                    // Additional waiting for stabilization
                     await Task.Delay(500);
-
-                    // Testing domain access
                     bool success = false;
                     string message = "";
+
                     try
                     {
-                        ConsoleUI.WriteLine($"  Attempting to connect to {domain}...", ConsoleUI.blue);
-                        var cancellationToken = new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token;
-                        var response = await httpClient.GetAsync(testUrl, cancellationToken);
+                        var response = await httpClient.GetAsync(testUrl, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
 
                         if (response.IsSuccessStatusCode)
                         {
                             success = true;
-                            message = $"HTTP {response.StatusCode}: Connection successful";
-                            ConsoleUI.WriteLine($"  [✓] SUCCESS: {message}", ConsoleUI.green);
+                            message = $"{String.Format(_localizationService.GetString("http_success"), response.StatusCode)}";
+                            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("success")}: {{0}}[/]", message);
                         }
                         else
                         {
-                            message = $"HTTP {response.StatusCode}: Connection failed";
-                            ConsoleUI.WriteLine($"  [✗] FAILED: {message}", ConsoleUI.red);
+                            message = $"{String.Format(_localizationService.GetString("http_fail"), response.StatusCode)}";
+                            AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                         }
                     }
                     catch (OperationCanceledException)
                     {
-                        message = "Connection timed out";
-                        ConsoleUI.WriteLine($"  [✗] FAILED: {message}", ConsoleUI.red);
+                        message = _localizationService.GetString("conn_timeout");
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                     }
                     catch (Exception ex)
                     {
-                        message = $"Error: {ex.Message}";
-                        ConsoleUI.WriteLine($"  [✗] FAILED: {message}", ConsoleUI.red);
+                        message = $"{_localizationService.GetString("error_occurred")}: {ex.Message}";
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                     }
 
                     results.Add((profile.Name, success, message));
                 }
                 finally
                 {
-                    // Stop the profile after the test
                     if (IsRunning()) await StopAsync(false);
                     await Task.Delay(1000);
                 }
             }
 
-            ConsoleUI.WriteLine("\n\nTest Results Summary", ConsoleUI.yellow);
-            ConsoleUI.WriteLine("=====================", ConsoleUI.yellow);
+            AnsiConsole.MarkupLine($"\n[{ConsoleUI.greyName}]{_localizationService.GetString("test_results")}[/]");
+            AnsiConsole.MarkupLine($"[{ConsoleUI.darkGreyName}]--------------------[/]");
 
             var successfulProfiles = results.Where(r => r.Success).ToList();
-
-            if (successfulProfiles.Count > 0)
+            if (successfulProfiles.Any())
             {
-                ConsoleUI.WriteLine($"[✓] {successfulProfiles.Count} profile(s) successfully bypassed blocking:", ConsoleUI.green);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profiles_bypassed")}[/]\n", successfulProfiles.Count);
                 foreach (var result in successfulProfiles)
-                {
-                    ConsoleUI.WriteLine($"  • {result.ProfileName}", ConsoleUI.green);
-                }
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}] - {result.ProfileName}[/]");
             }
             else
             {
-                ConsoleUI.WriteLine("[!] No profiles successfully bypassed the blocking. May God save us.", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles_bypassed")}[/]");
             }
 
             _currentProfile = initialProfile;
+            AnsiConsole.MarkupLine($"\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("press_any_key")}[/]");
+            Console.ReadKey(true);
         }
 
         private async Task<bool> IsDomainBlocked(string domain)

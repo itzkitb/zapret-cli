@@ -1,5 +1,8 @@
-﻿using System.Text.RegularExpressions;
+﻿using Spectre.Console;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using ZapretCLI.Core.Interfaces;
+using ZapretCLI.Core.Logging;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
@@ -9,15 +12,25 @@ namespace ZapretCLI.Core.Services
     {
         private readonly string _listsPath;
 
-        private Dictionary<string, int> _hostCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, int> _ipCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, int> _hostCounts = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, int> _ipCounts = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         private int _activeProfiles = 0;
         private int _defaultProfile = 0;
 
-        public StatusService(string appPath)
+        private readonly ILocalizationService _localizationService;
+        private readonly ILoggerService _logger;
+
+        private static readonly Regex _profileRegex = new Regex(@"we have (\d+) user defined desync profile\(s\) and default low priority profile (\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex _hostRegex = new Regex(@"Loaded (\d+) hosts from .+\\lists\\([^\\]+\.txt)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex _ipRegex = new Regex(@"Loaded (\d+) IP/subnet\(s\) from .+\\lists\\([^\\]+\.txt)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex _ipsetRegex = new Regex(@"Loaded (\d+) IP/subnet\(s\) from ipset file .+\\lists\\([^\\]+\.txt)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        public StatusService(string appPath, ILocalizationService ls, ILoggerService logs)
         {
             _listsPath = Path.Combine(appPath, "lists");
+            _localizationService = ls;
+            _logger = logs;
             Directory.CreateDirectory(_listsPath);
         }
 
@@ -26,34 +39,65 @@ namespace ZapretCLI.Core.Services
 
         private async Task LoadInitialData()
         {
-            var listFiles = Directory.GetFiles(_listsPath, "*.txt");
-            foreach (var file in listFiles)
+            try
             {
-                var fileName = Path.GetFileName(file);
-                var lines = await File.ReadAllLinesAsync(file);
+                var ipsets = 0;
+                var hosts = 0;
 
-                if (fileName.Contains("exclude") || fileName.Contains("ipset"))
+                _logger.LogInformation("Loading whitelists...");
+                if (!Directory.Exists(_listsPath))
                 {
-                    _ipCounts[fileName] = CountValidLines(lines);
+                    _logger.LogWarning($"Lists directory not found: {_listsPath}");
+                    Directory.CreateDirectory(_listsPath);
+                    return;
                 }
-                else
+
+                var listFiles = Directory.GetFiles(_listsPath, "*.txt");
+                foreach (var file in listFiles)
                 {
-                    _hostCounts[fileName] = CountValidLines(lines);
+                    try
+                    {
+                        var fileName = Path.GetFileName(file);
+                        _logger.LogDebug($"Processing whitelist file: {fileName}");
+
+                        var lines = await File.ReadAllLinesAsync(file);
+
+                        if (fileName.Contains("exclude", StringComparison.OrdinalIgnoreCase) ||
+                            fileName.Contains("ipset", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var count = CountValidLines(lines);
+                            _ipCounts[fileName] = count;
+                            ipsets++;
+                            _logger.LogDebug($"Loaded {count} IP/subnets from {fileName}");
+                        }
+                        else
+                        {
+                            var count = CountValidLines(lines);
+                            _hostCounts[fileName] = count;
+                            hosts++;
+                            _logger.LogDebug($"Loaded {count} hosts from {fileName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Error loading whitelist file {file}: {ex.Message}", ex);
+                    }
                 }
+
+                _logger.LogInformation($"Loaded {ipsets} ipsets and {hosts} hosts");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error initializing status service: {ex.Message}", ex);
+                throw;
             }
         }
 
         private int CountValidLines(string[] lines)
         {
-            int count = 0;
-            foreach (var line in lines)
-            {
-                if (!string.IsNullOrWhiteSpace(line) && !line.Trim().StartsWith("#"))
-                {
-                    count++;
-                }
-            }
-            return count;
+            return lines.Count(line =>
+                !string.IsNullOrWhiteSpace(line) &&
+                !line.TrimStart().StartsWith("#", StringComparison.OrdinalIgnoreCase));
         }
 
         public void ProcessOutputLine(string line)
@@ -61,55 +105,62 @@ namespace ZapretCLI.Core.Services
             if (string.IsNullOrWhiteSpace(line))
                 return;
 
-            // Parsing profile information
-            var profileMatch = Regex.Match(line, @"we have (\d+) user defined desync profile\(s\) and default low priority profile (\d+)");
-            if (profileMatch.Success && profileMatch.Groups.Count >= 3)
+            try
             {
-                if (int.TryParse(profileMatch.Groups[1].Value, out var activeProfiles))
+                // Parsing profile information
+                var profileMatch = _profileRegex.Match(line);
+                if (profileMatch.Success && profileMatch.Groups.Count >= 3)
                 {
-                    _activeProfiles = activeProfiles;
+                    if (int.TryParse(profileMatch.Groups[1].Value, out var activeProfiles))
+                    {
+                        Interlocked.Exchange(ref _activeProfiles, activeProfiles);
+                    }
+                    if (int.TryParse(profileMatch.Groups[2].Value, out var defaultProfile))
+                    {
+                        Interlocked.Exchange(ref _defaultProfile, defaultProfile);
+                    }
+                    return;
                 }
-                if (int.TryParse(profileMatch.Groups[2].Value, out var defaultProfile))
-                {
-                    _defaultProfile = defaultProfile;
-                }
-                return;
-            }
 
-            // Parsing information about loaded hosts
-            var hostMatch = Regex.Match(line, @"Loaded (\d+) hosts from .+\\lists\\([^\\]+\.txt)");
-            if (hostMatch.Success && hostMatch.Groups.Count >= 3)
-            {
-                var fileName = hostMatch.Groups[2].Value;
-                if (int.TryParse(hostMatch.Groups[1].Value, out var count))
+                // Parsing information about loaded hosts
+                var hostMatch = _hostRegex.Match(line);
+                if (hostMatch.Success && hostMatch.Groups.Count >= 3)
                 {
-                    _hostCounts[fileName] = count;
+                    var fileName = hostMatch.Groups[2].Value;
+                    if (int.TryParse(hostMatch.Groups[1].Value, out var count))
+                    {
+                        _hostCounts.AddOrUpdate(fileName, count, (key, oldValue) => count);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            // Parsing information about loaded IPs/subnets
-            var ipMatch = Regex.Match(line, @"Loaded (\d+) IP/subnet\(s\) from .+\\lists\\([^\\]+\.txt)");
-            if (ipMatch.Success && ipMatch.Groups.Count >= 3)
-            {
-                var fileName = ipMatch.Groups[2].Value;
-                if (int.TryParse(ipMatch.Groups[1].Value, out var count))
+                // Parsing information about loaded IPs/subnets
+                var ipMatch = _ipRegex.Match(line);
+                if (ipMatch.Success && ipMatch.Groups.Count >= 3)
                 {
-                    _ipCounts[fileName] = count;
+                    var fileName = ipMatch.Groups[2].Value;
+                    if (int.TryParse(ipMatch.Groups[1].Value, out var count))
+                    {
+                        _ipCounts.AddOrUpdate(fileName, count, (key, oldValue) => count);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            // Parsing information about loaded IPs from ipset
-            var ipsetMatch = Regex.Match(line, @"Loaded (\d+) IP/subnet\(s\) from ipset file .+\\lists\\([^\\]+\.txt)");
-            if (ipsetMatch.Success && ipsetMatch.Groups.Count >= 3)
-            {
-                var fileName = ipsetMatch.Groups[2].Value;
-                if (int.TryParse(ipsetMatch.Groups[1].Value, out var count))
+                // Parsing information about loaded IPs from ipset
+                var ipsetMatch = _ipsetRegex.Match(line);
+                if (ipsetMatch.Success && ipsetMatch.Groups.Count >= 3)
                 {
-                    _ipCounts[fileName] = count;
+                    var fileName = ipsetMatch.Groups[2].Value;
+                    if (int.TryParse(ipsetMatch.Groups[1].Value, out var count))
+                    {
+                        _ipCounts.AddOrUpdate(fileName, count, (key, oldValue) => count);
+                    }
+                    return;
                 }
-                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error processing log line: {line}. Exception: {ex.Message}", ex);
             }
         }
 
@@ -141,10 +192,10 @@ namespace ZapretCLI.Core.Services
         public async Task DisplayStatusAsync()
         {
             var stats = await GetStatusStatsAsync();
-            ConsoleUI.WriteLine($"  Hosts: {stats.TotalHosts}", ConsoleUI.blue);
-            ConsoleUI.WriteLine($"  IP/subnets: {stats.TotalIPs}", ConsoleUI.blue);
-            ConsoleUI.WriteLine($"  Desync profiles: {stats.ActiveProfiles}", ConsoleUI.blue);
-            ConsoleUI.WriteLine($"  Low priority profile: {stats.DefaultProfile}", ConsoleUI.blue);
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("hosts")}: [{ConsoleUI.greenName}]{stats.TotalHosts}[/]");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("ip_subnets")}: [{ConsoleUI.greenName}]{stats.TotalIPs}[/]");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("desync_profiles")}: [{ConsoleUI.greenName}]{stats.ActiveProfiles}[/]");
+            AnsiConsole.MarkupLine($"  {_localizationService.GetString("low_priority_profile")}: [{ConsoleUI.greenName}]{stats.DefaultProfile}[/]");
         }
     }
 }

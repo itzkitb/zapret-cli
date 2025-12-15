@@ -1,18 +1,31 @@
-﻿using System.Text;
+﻿using Spectre.Console;
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using ZapretCLI.Core.Interfaces;
+using ZapretCLI.Core.Logging;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
 namespace ZapretCLI.Core.Services
 {
-    public class ProfileService : IProfileService
+    public class ProfileService : IProfileService, IDisposable
     {
         private readonly string _profilesPath;
         private readonly string _batProfilesPath;
 
-        public ProfileService(string appPath)
+        private readonly ILoggerService _logger;
+        private readonly ILocalizationService _localizationService;
+
+        private readonly SemaphoreSlim _fileAccessLock = new SemaphoreSlim(1, 1);
+        private readonly ConcurrentDictionary<string, ZapretProfile> _profileCache = new ConcurrentDictionary<string, ZapretProfile>();
+        private DateTime _lastCacheUpdate = DateTime.MinValue;
+        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+
+        public ProfileService(string appPath, ILocalizationService ls, ILoggerService logs)
         {
+            _logger = logs;
+            _localizationService = ls;
             _profilesPath = Path.Combine(appPath, "profiles");
             _batProfilesPath = Path.Combine(appPath, "bat_profiles");
             Directory.CreateDirectory(_profilesPath);
@@ -21,62 +34,93 @@ namespace ZapretCLI.Core.Services
 
         public async Task<List<ZapretProfile>> LoadProfilesFromArchive(string extractedPath)
         {
-            var profiles = new List<ZapretProfile>();
-            var processedFiles = new List<string>();
+            _logger.LogInformation($"Loading profiles from archive: {extractedPath}");
 
-            // Search for .bat files in different possible locations
-            var searchPaths = new[]
+            await _fileAccessLock.WaitAsync();
+            try
             {
-                extractedPath,
-                Path.Combine(extractedPath, "bat_profiles"),
-                Path.Combine(extractedPath, "profiles"),
-                Path.Combine(extractedPath, "strategies")
-            };
+                var profiles = new List<ZapretProfile>();
+                var processedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var searchPath in searchPaths)
-            {
-                if (!Directory.Exists(searchPath)) continue;
-
-                var batFiles = Directory.GetFiles(searchPath, "*.bat", SearchOption.TopDirectoryOnly);
-                foreach (var batFile in batFiles)
+                // Search for .bat files in different possible locations
+                var searchPaths = new[]
                 {
-                    var fileName = Path.GetFileName(batFile);
-                    if (processedFiles.Contains(fileName, StringComparer.OrdinalIgnoreCase)) continue;
+            extractedPath,
+            Path.Combine(extractedPath, "bat_profiles"),
+            Path.Combine(extractedPath, "profiles"),
+            Path.Combine(extractedPath, "strategies")
+        };
 
-                    if (fileName.Equals("service.bat", StringComparison.OrdinalIgnoreCase)) continue;
+                foreach (var searchPath in searchPaths)
+                {
+                    if (!Directory.Exists(searchPath)) continue;
 
-                    try
+                    var batFiles = Directory.GetFiles(searchPath, "*.bat", SearchOption.TopDirectoryOnly);
+                    foreach (var batFile in batFiles)
                     {
-                        var destBatFile = Path.Combine(_batProfilesPath, fileName);
-                        File.Copy(batFile, destBatFile, true);
-                        processedFiles.Add(fileName);
+                        var fileName = Path.GetFileName(batFile);
+                        if (processedFiles.Contains(fileName)) continue;
 
-                        // Parsing profile
-                        var profile = ParseBatFile(batFile);
-                        if (profile != null && profile.Arguments?.Count > 0)
+                        if (fileName.Equals("service.bat", StringComparison.OrdinalIgnoreCase)) continue;
+
+                        try
                         {
-                            profiles.Add(profile);
-                            await SaveProfile(profile);
-                            ConsoleUI.WriteLine($"  [✓] Parsed profile: {profile.Name}", ConsoleUI.green);
+                            var destBatFile = Path.Combine(_batProfilesPath, fileName);
+                            File.Copy(batFile, destBatFile, true);
+                            processedFiles.Add(fileName);
+
+                            // Parsing profile
+                            var profile = ParseBatFile(batFile);
+                            if (profile != null && IsValidProfile(profile))
+                            {
+                                profiles.Add(profile);
+                                await SaveProfile(profile);
+                                AnsiConsole.MarkupLine($"  {_localizationService.GetString("parsed_profile")}: [{ConsoleUI.greenName}]{{0}}[/]", profile.Name);
+                                _profileCache[profile.Name] = profile;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("profile_parse_fail")} {{0}}: {{1}}[/]", fileName, ex.Message);
+                            _logger.LogError($"Error parsing profile from {fileName}: {ex.Message}", ex);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        ConsoleUI.WriteLine($"[✗] Failed to parse profile from {fileName}: {ex.Message}", ConsoleUI.red);
-                    }
                 }
-            }
 
-            return profiles;
+                _logger.LogInformation($"Loaded {profiles.Count} profiles from archive");
+                _lastCacheUpdate = DateTime.Now;
+                return profiles;
+            }
+            finally
+            {
+                _fileAccessLock.Release();
+            }
+        }
+
+        private bool IsValidProfile(ZapretProfile profile)
+        {
+            return profile != null &&
+                   !string.IsNullOrWhiteSpace(profile.Name) &&
+                   profile.Arguments != null &&
+                   profile.Arguments.Count > 0;
         }
 
         public ZapretProfile ParseBatFile(string filePath)
         {
             var fileName = Path.GetFileNameWithoutExtension(filePath);
-            var lines = File.ReadAllLines(filePath);
+            string[] lines;
+            try
+            {
+                lines = File.ReadAllLines(filePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Failed to read file {filePath}: {ex.Message}", ex);
+                return null;
+            }
 
             // Determine the profile name from the file name
-            var profileName = fileName.Replace("general", "")
+            var profileName = fileName.Replace("general", "", StringComparison.OrdinalIgnoreCase)
                                       .Replace("(", "")
                                       .Replace(")", "")
                                       .Replace("_", " ")
@@ -91,7 +135,8 @@ namespace ZapretCLI.Core.Services
             {
                 Name = profileName,
                 Description = $"Profile from '{fileName}.bat'",
-                Arguments = new List<string>()
+                Arguments = new List<string>(),
+                Id = Guid.NewGuid().ToString()
             };
 
             var fullCommand = new StringBuilder();
@@ -101,16 +146,16 @@ namespace ZapretCLI.Core.Services
             {
                 var trimmedLine = line.Trim();
 
-                if (trimmedLine.Contains("winws.exe"))
+                if (trimmedLine.Contains("winws.exe", StringComparison.OrdinalIgnoreCase))
                 {
                     inCommand = true;
-                    var startIndex = trimmedLine.IndexOf("winws.exe") + "winws.exe".Length;
+                    var startIndex = trimmedLine.IndexOf("winws.exe", StringComparison.OrdinalIgnoreCase) + "winws.exe".Length;
                     if (startIndex < trimmedLine.Length)
                     {
                         fullCommand.Append(trimmedLine.Substring(startIndex).Trim());
                     }
                 }
-                else if (inCommand && (trimmedLine.EndsWith("^") || trimmedLine.Contains("winws.exe")))
+                else if (inCommand && (trimmedLine.EndsWith("^") || trimmedLine.Contains("winws.exe", StringComparison.OrdinalIgnoreCase)))
                 {
                     var lineToAdd = trimmedLine.TrimEnd('^').Trim();
                     if (!string.IsNullOrWhiteSpace(lineToAdd))
@@ -118,7 +163,12 @@ namespace ZapretCLI.Core.Services
                         fullCommand.Append(" ").Append(lineToAdd);
                     }
                 }
-                else if (inCommand && !string.IsNullOrWhiteSpace(trimmedLine) && !trimmedLine.StartsWith("call") && !trimmedLine.StartsWith("set") && !trimmedLine.StartsWith("cd") && !trimmedLine.StartsWith("echo") && !trimmedLine.StartsWith("@"))
+                else if (inCommand && !string.IsNullOrWhiteSpace(trimmedLine) &&
+                        !trimmedLine.StartsWith("call", StringComparison.OrdinalIgnoreCase) &&
+                        !trimmedLine.StartsWith("set", StringComparison.OrdinalIgnoreCase) &&
+                        !trimmedLine.StartsWith("cd", StringComparison.OrdinalIgnoreCase) &&
+                        !trimmedLine.StartsWith("echo", StringComparison.OrdinalIgnoreCase) &&
+                        !trimmedLine.StartsWith("@", StringComparison.OrdinalIgnoreCase))
                 {
                     fullCommand.Append(" ").Append(trimmedLine);
                 }
@@ -143,10 +193,11 @@ namespace ZapretCLI.Core.Services
             var currentArg = new StringBuilder();
             bool inQuotes = false;
             bool escapeNext = false;
-            bool isStartArg = true;
 
-            foreach (char c in commandLine)
+            for (int i = 0; i < commandLine.Length; i++)
             {
+                char c = commandLine[i];
+
                 if (escapeNext)
                 {
                     currentArg.Append(c);
@@ -160,7 +211,7 @@ namespace ZapretCLI.Core.Services
                     continue;
                 }
 
-                if (c == '"' && !escapeNext)
+                if (c == '"' && (i == 0 || commandLine[i - 1] != '\\'))
                 {
                     inQuotes = !inQuotes;
                     continue;
@@ -168,15 +219,14 @@ namespace ZapretCLI.Core.Services
 
                 if (char.IsWhiteSpace(c) && !inQuotes)
                 {
-                    if (currentArg.Length > 0 || isStartArg)
+                    if (currentArg.Length > 0)
                     {
-                        var arg = currentArg.ToString();
+                        var arg = currentArg.ToString().Trim();
                         if (!string.IsNullOrWhiteSpace(arg) && IsValidArgument(arg))
                         {
                             args.Add(arg);
                         }
                         currentArg.Clear();
-                        isStartArg = false;
                     }
                     continue;
                 }
@@ -186,7 +236,7 @@ namespace ZapretCLI.Core.Services
 
             if (currentArg.Length > 0)
             {
-                var arg = currentArg.ToString();
+                var arg = currentArg.ToString().Trim();
                 if (!string.IsNullOrWhiteSpace(arg) && IsValidArgument(arg))
                 {
                     args.Add(arg);
@@ -220,31 +270,48 @@ namespace ZapretCLI.Core.Services
             var options = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(profile, options);
             await File.WriteAllTextAsync(profilePath, json);
+            _logger.LogInformation($"Saved profile {profile.Name}");
         }
 
         public async Task<List<ZapretProfile>> GetAvailableProfilesAsync()
         {
-            var profiles = new List<ZapretProfile>();
-            var profileFiles = Directory.GetFiles(_profilesPath, "*.json");
-
-            foreach (var file in profileFiles)
+            if (_profileCache.Count > 0 && (DateTime.Now - _lastCacheUpdate) < CacheDuration)
             {
-                try
-                {
-                    var json = await File.ReadAllTextAsync(file);
-                    var profile = JsonSerializer.Deserialize<ZapretProfile>(json);
-                    if (profile != null)
-                    {
-                        profiles.Add(profile);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ConsoleUI.WriteLine($"[✗] Failed to load profile {Path.GetFileName(file)}: {ex.Message}", ConsoleUI.red);
-                }
+                return _profileCache.Values.OrderBy(p => p.Name).ToList();
             }
 
-            return profiles.OrderBy(p => p.Name).ToList();
+            await _fileAccessLock.WaitAsync();
+            try
+            {
+                var profiles = new List<ZapretProfile>();
+                var profileFiles = Directory.GetFiles(_profilesPath, "*.json");
+
+                foreach (var file in profileFiles)
+                {
+                    try
+                    {
+                        var json = await File.ReadAllTextAsync(file);
+                        var profile = JsonSerializer.Deserialize<ZapretProfile>(json);
+                        if (profile != null)
+                        {
+                            profiles.Add(profile);
+                            _profileCache[profile.Name] = profile;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Failed to load profile from {file}: {ex.Message}", ex);
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("profile_load_fail")} {{0}}: {{1}}[/]", Path.GetFileName(file), ex.Message);
+                    }
+                }
+
+                _lastCacheUpdate = DateTime.Now;
+                return profiles.OrderBy(p => p.Name).ToList();
+            }
+            finally
+            {
+                _fileAccessLock.Release();
+            }
         }
 
         public async Task<ZapretProfile> GetProfileByName(string name)
@@ -266,6 +333,17 @@ namespace ZapretCLI.Core.Services
             var invalidChars = Path.GetInvalidFileNameChars();
             var sanitized = string.Concat(name.Split(invalidChars));
             return string.IsNullOrWhiteSpace(sanitized) ? "unnamed_profile" : sanitized;
+        }
+
+        public void ClearCache()
+        {
+            _profileCache.Clear();
+            _lastCacheUpdate = DateTime.MinValue;
+        }
+
+        public void Dispose()
+        {
+            _fileAccessLock.Dispose();
         }
     }
 }

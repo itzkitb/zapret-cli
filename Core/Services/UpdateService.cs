@@ -1,35 +1,42 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using SharpCompress.Archives;
+﻿using SharpCompress.Archives;
 using SharpCompress.Common;
+using Spectre.Console;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.ServiceProcess;
 using System.Text.Json;
 using ZapretCLI.Core.Interfaces;
+using ZapretCLI.Core.Logging;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
 namespace ZapretCLI.Core.Services
 {
-    public class UpdateService : IUpdateService
+    public class UpdateService : IUpdateService, IDisposable
     {
         private readonly string _appPath;
         private readonly HttpClient _httpClient;
         private readonly IProfileService _profileManager;
         private readonly IZapretManager _zapretManager;
+        private readonly ILocalizationService _localizationService;
+        private readonly ILoggerService _logger;
         private const string GitHubRepo = "https://github.com/Flowseal/zapret-discord-youtube";
         private const string ApiUrl = "https://api.github.com/repos/Flowseal/zapret-discord-youtube/releases/latest";
         private const string CliRepo = "https://github.com/itzkitb/zapret-cli";
         private const string CliApiUrl = "https://api.github.com/repos/itzkitb/zapret-cli/releases/latest";
 
-        public UpdateService(string appPath, IProfileService ps, IZapretManager zm)
+        public UpdateService(string appPath, IProfileService ps, IZapretManager zm, ILocalizationService ls, ILoggerService logs)
         {
             _appPath = appPath;
-            _httpClient = new HttpClient();
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("ZapretCLI/1.0");
             _profileManager = ps;
             _zapretManager = zm;
+            _localizationService = ls;
+            _logger = logs;
+
+            _httpClient = new HttpClient(new HttpClientHandler { CheckCertificateRevocationList = true });
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"Zapret-CLI/{GetCliVersion()}");
+            _httpClient.Timeout = TimeSpan.FromSeconds(60);
         }
 
         public async Task CheckForUpdatesAsync()
@@ -37,26 +44,30 @@ namespace ZapretCLI.Core.Services
             try
             {
                 var versionFile = Path.Combine(_appPath, "VERSION");
+
                 if (File.Exists(versionFile))
                 {
-                    var release = await GetLatestRelease();
                     var currentVersion = GetCurrentVersion();
+                    _logger.LogInformation($"Local Zapret version: {currentVersion}");
+
+                    var release = await GetLatestRelease();
                     var newVersion = new Version(release.TagName.Replace("b", "").Replace("a", ""));
+                    _logger.LogInformation($"Latest Zapret version: {newVersion}");
 
                     if (release != null && currentVersion < newVersion)
                     {
 
-                        ConsoleUI.WriteLine($"[!] New version of Zapret available: {release.TagName}", ConsoleUI.yellow);
-                        ConsoleUI.WriteLine($"Current version: {currentVersion}\nNew version: {newVersion}", ConsoleUI.yellow);
+                        AnsiConsole.MarkupLine($"{_localizationService.GetString("new_version_title")}: [{ConsoleUI.greenName}]{{0}}[/]", release.TagName);
+                        AnsiConsole.MarkupLine($"{_localizationService.GetString("current_version")}: [{ConsoleUI.greenName}]{{0}}[/]\nNew version: [{ConsoleUI.greenName}]{{1}}[/]", currentVersion, newVersion);
 
                         var shortChangelog = release.Body.Length > 200
                             ? release.Body.Substring(0, 200) + "..."
                             : release.Body;
-                        ConsoleUI.WriteLine($"Changelog: {shortChangelog}", ConsoleUI.yellow);
+                        AnsiConsole.MarkupLine($"{_localizationService.GetString("changelog")}: [{ConsoleUI.greyName}]{{0}}[/]", shortChangelog);
 
 
-                        var result = ConsoleUI.ReadLineWithPrompt("Update? (Y/N): ");
-                        if (result.Contains("Y", StringComparison.InvariantCultureIgnoreCase))
+                        var result = AnsiConsole.Confirm(_localizationService.GetString("update_ask"));
+                        if (result)
                         {
                             await DownloadLatestReleaseAsync();
                         }
@@ -64,13 +75,14 @@ namespace ZapretCLI.Core.Services
                 }
                 else
                 {
-                    ConsoleUI.WriteLine($"It looks like this is your first launch. Installing the latest version of Zapret...", ConsoleUI.yellow);
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("first_launch")}[/]");
                     await DownloadLatestReleaseAsync();
                 }
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[!] Failed to check updates: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("updates_check_fail")}: {{0}}[/]", ex.Message);
+                _logger.LogInformation("Something went wrong1", ex);
                 await Task.Delay(500);
             }
         }
@@ -79,21 +91,24 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                var release = await GetLatestCliRelease();
                 var currentVersion = GetCliVersion();
+                _logger.LogInformation($"Local CLI version: {currentVersion}");
+
+                var release = await GetLatestCliRelease();
                 var newVersion = new Version(release.TagName);
+                _logger.LogInformation($"Latest CLI version: {newVersion}");
 
                 if (release != null && currentVersion < newVersion)
                 {
-                    ConsoleUI.WriteLine($"[!] New version of Zapret CLI available: {release.TagName}", ConsoleUI.yellow);
-                    ConsoleUI.WriteLine($"Current version: {currentVersion}\nNew version: {newVersion}", ConsoleUI.yellow);
+                    AnsiConsole.MarkupLine($"{_localizationService.GetString("new_cli_version_title")}: [{ConsoleUI.greenName}]{{0}}[/]", release.TagName);
+                    AnsiConsole.MarkupLine($"{_localizationService.GetString("current_version")}: [{ConsoleUI.greenName}]{{0}}[/]\nNew version: [{ConsoleUI.greenName}]{{1}}[/]", currentVersion, newVersion);
+
                     var shortChangelog = release.Body.Length > 200
                         ? release.Body.Substring(0, 200) + "..."
                         : release.Body;
-                    ConsoleUI.WriteLine($"Changelog: {shortChangelog}", ConsoleUI.yellow);
-                    ConsoleUI.WriteLine("\n", ConsoleUI.blue);
-                    var result = ConsoleUI.ReadLineWithPrompt("Update? (Y/N): ");
-                    if (result.Contains("Y", StringComparison.InvariantCultureIgnoreCase))
+                    AnsiConsole.MarkupLine($"{_localizationService.GetString("changelog")}: [{ConsoleUI.greyName}]{{0}}[/]", shortChangelog);
+                    var result = AnsiConsole.Confirm(_localizationService.GetString("update_ask"));
+                    if (result)
                     {
                         await UpdateCliAsync();
                     }
@@ -101,26 +116,19 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[!] Failed to check CLI updates: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("cli_updates_check_fail")}: {{0}}[/]", ex.Message);
+                _logger.LogInformation("Something went wrong1", ex);
                 await Task.Delay(500);
             }
         }
 
         private async Task<GithubRelease> GetLatestCliRelease()
         {
-            try
+            var response = await _httpClient.GetStringAsync(CliApiUrl);
+            return JsonSerializer.Deserialize<GithubRelease>(response, new JsonSerializerOptions
             {
-                var response = await _httpClient.GetStringAsync(CliApiUrl);
-                return JsonSerializer.Deserialize<GithubRelease>(response, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch (Exception ex)
-            {
-                ConsoleUI.WriteLine($"[✗] Error fetching CLI release info: {ex.Message}", ConsoleUI.red);
-                return null;
-            }
+                PropertyNameCaseInsensitive = true
+            });
         }
 
         private Version GetCliVersion()
@@ -132,12 +140,13 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                ConsoleUI.WriteLine("Updating Zapret CLI...", ConsoleUI.yellow);
+                _logger.LogInformation($"Downloading new CLI version...");
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("downloading")}[/]");
+
                 var release = await GetLatestCliRelease();
                 if (release == null || !release.Assets.Any())
                 {
-                    ConsoleUI.WriteLine("  [✗] No release assets found", ConsoleUI.red);
-                    return;
+                    throw new Exception("No release assets found");
                 }
 
                 // Looking for the .exe installer in the release
@@ -147,8 +156,7 @@ namespace ZapretCLI.Core.Services
 
                 if (asset == null)
                 {
-                    ConsoleUI.WriteLine("  [✗] No setup executable found in release assets", ConsoleUI.red);
-                    return;
+                    throw new Exception("No setup executable found in release assets");
                 }
 
                 // Create a temporary download folder
@@ -156,14 +164,10 @@ namespace ZapretCLI.Core.Services
                 Directory.CreateDirectory(tempDir);
                 var downloadPath = Path.Combine(tempDir, asset.Name);
 
-                ConsoleUI.WriteLine($"  Downloading: {asset.Name}", ConsoleUI.blue);
-
                 // Downloading the file
                 using (var response = await _httpClient.GetAsync(asset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead))
                 {
                     response.EnsureSuccessStatusCode();
-                    var totalBytes = response.Content.Headers.ContentLength ?? -1;
-                    long receivedBytes = 0;
 
                     using (var fileStream = new FileStream(downloadPath, FileMode.Create, FileAccess.Write, FileShare.None))
                     using (var contentStream = await response.Content.ReadAsStreamAsync())
@@ -173,20 +177,12 @@ namespace ZapretCLI.Core.Services
                         while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                         {
                             await fileStream.WriteAsync(buffer, 0, bytesRead);
-                            receivedBytes += bytesRead;
-                            if (totalBytes > 0)
-                            {
-                                var progress = (int)(receivedBytes * 100 / totalBytes);
-                                ConsoleUI.WriteProgress(progress, "  ");
-                            }
                         }
                     }
                 }
 
-                Console.Write("\n");
-                ConsoleUI.WriteLine("  [✓] Download completed!", ConsoleUI.green);
-
-                ConsoleUI.WriteLine("Launching installer...", ConsoleUI.yellow);
+                _logger.LogInformation($"Launching installer ({downloadPath})...");
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("launching_installer")}[/]");
 
                 if (_zapretManager.IsRunning())
                 {
@@ -202,16 +198,19 @@ namespace ZapretCLI.Core.Services
                     Verb = "runas"
                 };
 
-                Process.Start(processStartInfo);
+                var installProcess = Process.Start(processStartInfo);
+                _logger.LogInformation($"Installer process started with ID: {installProcess?.Id}");
 
-                ConsoleUI.WriteLine("[✓] Installer launched. Closing application...", ConsoleUI.green);
-                await Task.Delay(1000);
+                _logger.LogInformation("Closing app...");
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("close_app")}[/]");
+                await Task.Delay(500);
                 Environment.Exit(0);
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Failed to update CLI: {ex.Message}", ConsoleUI.red);
-                ConsoleUI.WriteLine($"Details: {ex.InnerException?.Message ?? ex.StackTrace}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")}: {{0}}[/]", ex.Message);
+                AnsiConsole.WriteLine(ex.InnerException?.Message ?? ex.StackTrace);
+                _logger.LogInformation("Something went wrong1", ex);
             }
         }
 
@@ -219,13 +218,12 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                ConsoleUI.WriteLine("Updating...", ConsoleUI.yellow);
+                _logger.LogInformation("Getting latest Zapret version...");
                 var release = await GetLatestRelease();
 
                 if (release == null || !release.Assets.Any())
                 {
-                    ConsoleUI.WriteLine("  [✗] No release assets found", ConsoleUI.red);
-                    return;
+                    throw new Exception("No release assets found");
                 }
 
                 // Select the first suitable archive (ZIP or RAR)
@@ -235,8 +233,7 @@ namespace ZapretCLI.Core.Services
 
                 if (asset == null)
                 {
-                    ConsoleUI.WriteLine("  [✗] No suitable archive found (ZIP/RAR)", ConsoleUI.red);
-                    return;
+                    throw new Exception("No suitable archive found");
                 }
 
                 // Create a temporary download folder
@@ -244,15 +241,15 @@ namespace ZapretCLI.Core.Services
                 Directory.CreateDirectory(tempDir);
 
                 var downloadPath = Path.Combine(tempDir, asset.Name);
-                ConsoleUI.WriteLine($"  Downloading: {asset.Name}", ConsoleUI.blue);
+
+                _logger.LogInformation("Downloading new Zapret version...");
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("downloading")}[/]");
 
                 // Download the file
+                _logger.LogInformation($"Downloading archive: {asset.Name} ({asset.Size / 1024 / 1024:F1} MB)");
                 using (var response = await _httpClient.GetAsync(asset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead))
                 {
                     response.EnsureSuccessStatusCode();
-
-                    var totalBytes = response.Content.Headers.ContentLength ?? -1;
-                    long receivedBytes = 0;
 
                     using (var fileStream = new FileStream(downloadPath, FileMode.Create, FileAccess.Write, FileShare.None))
                     using (var contentStream = await response.Content.ReadAsStreamAsync())
@@ -263,32 +260,27 @@ namespace ZapretCLI.Core.Services
                         while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
                         {
                             await fileStream.WriteAsync(buffer, 0, bytesRead);
-                            receivedBytes += bytesRead;
-
-                            if (totalBytes > 0)
-                            {
-                                var progress = (int)(receivedBytes * 100 / totalBytes);
-                                ConsoleUI.WriteProgress(progress, "  ");
-                            }
                         }
                     }
                 }
 
-                Console.Write("\n");
-                ConsoleUI.WriteLine("  [✓] Download completed!", ConsoleUI.green);
-
+                _logger.LogInformation("Extracting archive...");
                 await ExtractArchive(downloadPath, tempDir);
-                ConsoleUI.WriteLine("");
+                _logger.LogInformation("Stopping services...");
                 StopServicesAndProcesses();
+                _logger.LogInformation("Copying files...");
                 await CopyFiles(tempDir);
+                _logger.LogInformation("Cleaning up temp...");
                 await CleanupTempFiles(tempDir);
 
-                ConsoleUI.WriteLine("[✓] Update installed successfully!", ConsoleUI.green);
+                _logger.LogInformation($"Zapret updated. New version: {release.TagName}");
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("zapret_updated")}[/]");
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"✗ Failed to download update: {ex.Message}", ConsoleUI.red);
-                ConsoleUI.WriteLine($"Details: {ex.InnerException?.Message ?? ex.StackTrace}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")}: {{0}}[/]", ex.Message);
+                AnsiConsole.WriteLine(ex.InnerException?.Message ?? ex.StackTrace);
+                _logger.LogInformation("Something went wrong1", ex);
             }
         }
 
@@ -296,18 +288,17 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                ConsoleUI.WriteLine("Stopping services and processes...", ConsoleUI.yellow);
-
                 KillProcessByName("winws.exe");
                 StopAndDeleteService("zapret");
                 StopAndDeleteService("WinDivert");
                 StopAndDeleteService("WinDivert14");
 
-                ConsoleUI.WriteLine("[✓] Services and processes stopped successfully", ConsoleUI.green);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("services_stop")}[/]");
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[!] Warning: Failed to stop some services/processes: {ex.Message}", ConsoleUI.yellow);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("services_stop_fail")}: {{0}}[/]", ex.Message);
+                _logger.LogInformation("Something went wrong1", ex);
             }
         }
 
@@ -319,17 +310,15 @@ namespace ZapretCLI.Core.Services
                 {
                     if (service.Status == ServiceControllerStatus.Running)
                     {
-                        ConsoleUI.WriteLine($"  Stopping service: {serviceName}", ConsoleUI.blue);
                         service.Stop();
                         service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
                     }
 
                     if (service.Status != ServiceControllerStatus.Stopped)
                     {
-                        ConsoleUI.WriteLine($"  [!] Service {serviceName} could not be stopped, attempting to delete anyway", ConsoleUI.yellow);
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("service_stop_fail")}[/]", serviceName);
                     }
 
-                    ConsoleUI.WriteLine($"  Deleting service: {serviceName}", ConsoleUI.blue);
                     service.Dispose();
 
                     var process = new Process
@@ -351,11 +340,12 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex) when (ex is InvalidOperationException || ex is Win32Exception)
             {
-                ConsoleUI.WriteLine($"  [✓] Service {serviceName} not found", ConsoleUI.green);
+                //ConsoleUI.WriteLine($"  [✓] Service {serviceName} not found", ConsoleUI.green);
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"  [✗] Failed to stop/delete service {serviceName}: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("service_delete_fail")} {{0}}: {{1}}[/]", serviceName, ex.Message);
+                _logger.LogInformation($"Something went wrong while stopping/deleting {serviceName}1", ex);
                 throw;
             }
         }
@@ -367,7 +357,6 @@ namespace ZapretCLI.Core.Services
                 var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(processName));
                 if (processes.Length == 0)
                 {
-                    ConsoleUI.WriteLine($"  [✓] Process {processName} not running", ConsoleUI.green);
                     return;
                 }
 
@@ -375,17 +364,16 @@ namespace ZapretCLI.Core.Services
                 {
                     try
                     {
-                        ConsoleUI.WriteLine($"  Terminating process: {processName} (PID: {process.Id})", ConsoleUI.blue);
                         process.Kill();
                         process.WaitForExit(5000);
                         if (!process.HasExited)
                         {
-                            ConsoleUI.WriteLine($"  [✗] Warning: Process {processName} did not exit gracefully", ConsoleUI.yellow);
+                            AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("process_exited_with_fail")}[/]", processName);
                         }
                     }
                     catch (Exception ex)
                     {
-                        ConsoleUI.WriteLine($"  [✗] Failed to terminate process {processName}: {ex.Message}", ConsoleUI.red);
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("process_terminate_fail")} {{0}}: {{1}}[/]", processName, ex.Message);
                     }
                     finally
                     {
@@ -395,7 +383,8 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"  [✗] Error checking processes: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("processes_terminate_fail")} {{0}}: {{1}}[/]", processName, ex.Message);
+                _logger.LogInformation($"Something went wrong while stopping/deleting {processName}1", ex);
             }
         }
 
@@ -403,16 +392,23 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                var response = await _httpClient.GetStringAsync(ApiUrl);
-                return JsonSerializer.Deserialize<GithubRelease>(response, new JsonSerializerOptions
+                _logger.LogInformation($"Fetching latest release from {ApiUrl}");
+                var response = await _httpClient.GetAsync(ApiUrl);
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    PropertyNameCaseInsensitive = true
-                });
+                    _logger.LogError($"GitHub API returned status code: {response.StatusCode}");
+                    throw new HttpRequestException($"Failed to fetch release information: {response.StatusCode}");
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                return JsonSerializer.Deserialize<GithubRelease>(content, options);
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Error fetching release info: {ex.Message}", ConsoleUI.red);
-                return null;
+                _logger.LogError($"Error fetching latest release: {ex.Message}");
+                throw;
             }
         }
 
@@ -426,8 +422,6 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                ConsoleUI.WriteLine("\nExtracting...", ConsoleUI.yellow);
-
                 var extractDir = Path.Combine(tempDir, "extracted");
                 Directory.CreateDirectory(extractDir);
 
@@ -455,8 +449,6 @@ namespace ZapretCLI.Core.Services
                         throw new NotSupportedException($"Unsupported archive format: {fileExtension}");
                 }
 
-                ConsoleUI.WriteLine("  [✓] Archive extracted successfully", ConsoleUI.green);
-
                 var rootFolder = FindZapretRootFolder(extractDir);
                 if (rootFolder == null)
                 {
@@ -470,11 +462,12 @@ namespace ZapretCLI.Core.Services
 
                 Directory.Move(rootFolder, targetDir);
 
-                ConsoleUI.WriteLine($"  [✓] Found zapret files at: {Path.GetFileName(rootFolder)}", ConsoleUI.green);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("extract_success")}[/]");
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Failed to extract archive: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("extract_fail")}: {{0}}[/]", ex.Message);
+                _logger.LogInformation($"Something went wrong1", ex);
                 throw;
             }
         }
@@ -540,21 +533,20 @@ namespace ZapretCLI.Core.Services
             Directory.CreateDirectory(binDest);
             Directory.CreateDirectory(listsDest);
 
-            ConsoleUI.WriteLine("\nCopying binary files...", ConsoleUI.yellow);
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("files_copy")}[/]");
             foreach (var file in Directory.GetFiles(binSource))
             {
                 var destFile = Path.Combine(binDest, Path.GetFileName(file));
                 File.Copy(file, destFile, true);
-                ConsoleUI.WriteLine($"  [✓] {Path.GetFileName(file)}", ConsoleUI.green);
                 await Task.Delay(50);
             }
 
-            ConsoleUI.WriteLine("\nUpdating lists...", ConsoleUI.yellow);
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("lists_update")}[/]");
             await MergeLists(listsSource, listsDest);
 
-            ConsoleUI.WriteLine("\nProcessing profiles...", ConsoleUI.yellow);
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profiles_proccess")}[/]");
             var profiles = await _profileManager.LoadProfilesFromArchive(sourceDir);
-            ConsoleUI.WriteLine($"\n[✓] Found and processed {profiles.Count} profiles", ConsoleUI.green);
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profiles_proccessed")}[/]", profiles.Count);
 
             var versionFile = Path.Combine(_appPath, "VERSION");
             var releaseInfo = await GetLatestRelease();
@@ -589,7 +581,6 @@ namespace ZapretCLI.Core.Services
                     if (!File.Exists(destFile))
                     {
                         await File.WriteAllLinesAsync(destFile, sourceLines);
-                        ConsoleUI.WriteLine($"  [✓] Created {file} with {sourceLines.Count} entries", ConsoleUI.green);
                         continue;
                     }
 
@@ -602,16 +593,12 @@ namespace ZapretCLI.Core.Services
                     if (newLines.Count > 0)
                     {
                         await File.AppendAllLinesAsync(destFile, newLines.Select(l => l + Environment.NewLine));
-                        ConsoleUI.WriteLine($"  [✓] Added {newLines.Count} new entries to {file}", ConsoleUI.green);
-                    }
-                    else
-                    {
-                        ConsoleUI.WriteLine($"  [✓] {file} is already up to date", ConsoleUI.green);
                     }
                 }
                 catch (Exception ex)
                 {
-                    ConsoleUI.WriteLine($"  [✗] Failed to update {file}: {ex.Message}", ConsoleUI.red);
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")} {{0}}: {{1}}[/]", file, ex.Message);
+                    _logger.LogInformation($"Something went wrong1", ex);
                 }
             }
         }
@@ -627,7 +614,6 @@ namespace ZapretCLI.Core.Services
                         try
                         {
                             Directory.Delete(tempDir, true);
-                            ConsoleUI.WriteLine($"[✓] Cleaned up temporary files", ConsoleUI.green);
                             return;
                         }
                         catch
@@ -639,7 +625,22 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[!] Failed to cleanup temp files: {ex.Message}", ConsoleUI.yellow);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("temp_cleanup_fail")}: {{0}}[/]", ex.Message);
+                _logger.LogInformation($"Something went wrong1", ex);
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _httpClient?.Dispose();
             }
         }
     }

@@ -11,5 +11,6 @@ namespace ZapretCLI.Core.Interfaces
         event EventHandler WindivertInitialized;
         event EventHandler<string> OutputLineReceived;
         event EventHandler<string> ErrorLineReceived;
+        void Dispose();
     }
 }

@@ -1,9 +1,14 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Core;
+using Spectre.Console;
 using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
-using ZapretCLI.Configuration;
+using System.Text.Json;
 using ZapretCLI.Core.Interfaces;
+using ZapretCLI.Core.Logging;
 using ZapretCLI.Core.Managers;
 using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
@@ -15,25 +20,86 @@ namespace ZapretCLI
     {
         public static ServiceProvider ServiceProvider;
         private static System.Timers.Timer _statusTimer;
+        private static ILoggerService _logger;
+        private static CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         static async Task Main(string[] args)
         {
-            // OS and administrator rights checks
-            if (!await InitializeApplicationAsync(args))
-                return;
-
-            // Setting up a DI container
-            ServiceProvider = ConfigureServices();
-
             try
             {
-                await RunApplicationAsync();
+                ConfigureMinimalLogger();
+
+                AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                {
+                    var exception = e.ExceptionObject as Exception;
+                    Log.Fatal(exception, "Unhandled exception occurred");
+                };
+                TaskScheduler.UnobservedTaskException += (s, e) =>
+                {
+                    Log.Error(e.Exception, "Unobserved task exception");
+                    e.SetObserved();
+                };
+
+                // OS and administrator rights checks
+                if (!await InitializeApplicationAsync(args))
+                    return;
+
+                // Setting up a DI container
+                ServiceProvider = ConfigureServices();
+
+                await RunApplicationAsync(args);
             }
             finally
             {
-                ServiceProvider?.Dispose();
+                DisposeResources();
+            }
+        }
+
+        private static void ConfigureMinimalLogger()
+        {
+            var appPath = AppDomain.CurrentDomain.BaseDirectory;
+            var logsPath = Path.Combine(appPath, "logs");
+            Directory.CreateDirectory(logsPath);
+            var logPath = Path.Combine(logsPath, $"zapret_{DateTime.Now:yyyyMMdd}.log");
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.File(
+                    path: logPath,
+                    formatter: new CustomLogFormatter(),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 7)
+                .CreateLogger();
+        }
+
+        private static void DisposeResources()
+        {
+            try
+            {
+                MainMenu.Shutdown();
+
+                var updateService = ServiceProvider.GetRequiredService<IUpdateService>();
+                var profileService = ServiceProvider.GetRequiredService<IProfileService>();
+                var processService = ServiceProvider.GetRequiredService<IProcessService>();
+                var localizationService = ServiceProvider.GetRequiredService<ILocalizationService>();
+                var configService = ServiceProvider.GetRequiredService<IConfigService>();
+
+                updateService.Dispose();
+                profileService.Dispose();
+                processService.Dispose();
+                localizationService.Dispose();
+                configService.Dispose();
+
                 _statusTimer?.Stop();
                 _statusTimer?.Dispose();
+                _cancellationTokenSource.Cancel();
+                _cancellationTokenSource.Dispose();
+                ServiceProvider?.Dispose();
+                Log.CloseAndFlush();
+            }
+            catch
+            {
+                // 
             }
         }
 
@@ -43,12 +109,18 @@ namespace ZapretCLI
             var appPath = AppDomain.CurrentDomain.BaseDirectory;
 
             // Registration of services
+            services = SetupLogger(services);
+
             services.AddSingleton<IFileSystemService, FileSystemService>();
-            services.AddSingleton<AppSettings>();
-            services.AddSingleton<ConfigurationService>(sp =>
-            {
-                return new ConfigurationService(sp.GetRequiredService<IFileSystemService>(), appPath);
-            });
+            services.AddSingleton<AppConfig>();
+            services.AddSingleton<IConfigService, ConfigService>(sp => new ConfigService(appPath, sp.GetRequiredService<ILoggerService>()));
+            services.AddSingleton<ILocalizationService, LocalizationService>(sp =>
+                new LocalizationService(
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<IFileSystemService>(),
+                    sp.GetRequiredService<ILoggerService>(),
+                    appPath
+            ));
 
             // HttpClient
             services.AddHttpClient();
@@ -57,43 +129,79 @@ namespace ZapretCLI
             services.AddSingleton<IProcessService, ProcessService>(sp =>
             {
                 var fileSystem = sp.GetRequiredService<IFileSystemService>();
-                var configuration = sp.GetRequiredService<ConfigurationService>().GetAppSettings();
-                return new ProcessService(fileSystem, configuration, appPath);
+                var configuration = sp.GetRequiredService<IConfigService>().GetConfig();
+                var logger = sp.GetRequiredService<ILoggerService>();
+                return new ProcessService(fileSystem, configuration, appPath, logger);
             });
             services.AddSingleton<IStatusService, StatusService>(sp =>
             {
-                return new StatusService(appPath);
+                var localizationService = sp.GetRequiredService<ILocalizationService>();
+                var logger = sp.GetRequiredService<ILoggerService>();
+                return new StatusService(appPath, localizationService, logger);
             });
             services.AddSingleton<IProfileService, ProfileService>(sp =>
             {
-                return new ProfileService(appPath);
+                var localizationService = sp.GetRequiredService<ILocalizationService>();
+                var logger = sp.GetRequiredService<ILoggerService>();
+                return new ProfileService(appPath, localizationService, logger);
             });
             services.AddSingleton<IZapretManager, ZapretManager>(sp =>
             {
                 var processService = sp.GetRequiredService<IProcessService>();
                 var statusService = sp.GetRequiredService<IStatusService>();
                 var profileService = sp.GetRequiredService<IProfileService>();
-                return new ZapretManager(appPath, processService, statusService, profileService);
+                var localizationService = sp.GetRequiredService<ILocalizationService>();
+                var configService = sp.GetRequiredService<IConfigService>();
+                var logger = sp.GetRequiredService<ILoggerService>();
+                return new ZapretManager(appPath, processService, statusService, profileService, localizationService, configService, logger);
             });
             services.AddSingleton<IUpdateService, UpdateService>(sp =>
             {
-                return new UpdateService(appPath, sp.GetRequiredService<IProfileService>(), sp.GetRequiredService<IZapretManager>());
+                return new UpdateService(appPath, sp.GetRequiredService<IProfileService>(), sp.GetRequiredService<IZapretManager>(), sp.GetRequiredService<ILocalizationService>(), sp.GetRequiredService<ILoggerService>());
             });
 
             return services.BuildServiceProvider();
+        }
+
+        private static ServiceCollection SetupLogger(ServiceCollection services)
+        {
+            var appPath = AppDomain.CurrentDomain.BaseDirectory;
+            var logsPath = Path.Combine(appPath, "logs");
+            Directory.CreateDirectory(logsPath);
+
+            var logPath = Path.Combine(logsPath, $"zapret_{DateTime.Now:yyyyMMdd}.log");
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(
+                    path: logPath,
+                    formatter: new CustomLogFormatter(),
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 7)
+                .CreateLogger();
+
+            services.AddLogging(loggingBuilder =>
+            {
+                loggingBuilder.ClearProviders();
+                loggingBuilder.AddSerilog(Log.Logger, dispose: true);
+            });
+
+            services.AddSingleton<ILoggerService, LoggerService>();
+
+            return services;
         }
 
         private static async Task<bool> InitializeApplicationAsync(string[] args)
         {
             if (Environment.OSVersion.Platform != PlatformID.Win32NT)
             {
-                ConsoleUI.WriteLine("[✗] Sorry, but Zapret only works on Windows... :(", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Unfortunately, it currently only works on Windows...[/] [{ConsoleUI.greyName}]:([/]");
                 return false;
             }
 
             if (!IsAdministrator())
             {
-                ConsoleUI.WriteLine("[!] Administrator rights are required! Restarting...", ConsoleUI.yellow);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Administrator rights are required! Restarting...[/]");
                 await Task.Delay(250);
                 RestartAsAdmin(args);
                 return false;
@@ -107,26 +215,51 @@ namespace ZapretCLI
             return true;
         }
 
-        private static async Task RunApplicationAsync()
+        private static async Task RunApplicationAsync(string[] args)
         {
-            // Services init
-            Console.Title = "Zapret CLI";
+            // Initialization
+            Console.Title = $"Zapret CLI - v.{MainMenu.version}";
+
+            _logger = ServiceProvider.GetRequiredService<ILoggerService>();
+            _logger.LogInformation($"Zapret CLI - v.{MainMenu.version}");
+            _logger.LogInformation($"Launch arguments: {JsonSerializer.Serialize(args)}");
+            _logger.LogInformation($"OS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription}");
+            _logger.LogInformation($".NET runtime: {Environment.Version}");
+            _logger.LogInformation($"Initializing...");
+
             var zapretManager = ServiceProvider.GetRequiredService<IZapretManager>();
             var updateService = ServiceProvider.GetRequiredService<IUpdateService>();
 
-            ConsoleUI.WriteLine("Checking for updates...", ConsoleUI.blue);
-
+            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{ServiceProvider.GetRequiredService<ILocalizationService>().GetString("checking_for_updates")}[/]");
+            _logger.LogInformation($"Initializing ZapretManager...");
             await zapretManager.InitializeAsync();
-            await updateService.CheckForUpdatesAsync();
-            await updateService.CheckForCliUpdatesAsync();
 
-            // Timer for title update
+            // Run update checks
+            try
+            {
+                await Task.Run(async () =>
+                {
+                    await updateService.CheckForUpdatesAsync();
+                    await updateService.CheckForCliUpdatesAsync();
+                }, _cancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Update checks were canceled.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Update checks failed", ex);
+            }
+
+            // Title timers setup
             _statusTimer = new System.Timers.Timer(1000);
             _statusTimer.Elapsed += async (sender, e) => await UpdateConsoleTitle(zapretManager);
             _statusTimer.Start();
 
-            ConsoleUI.ShowHeader();
-            await MainLoop(zapretManager, updateService);
+            // Show main menu
+            _logger.LogInformation($"Initialization completed...");
+            await MainMenu.ShowAsync(ServiceProvider);
         }
 
         public static async Task UpdateProfiles()
@@ -136,107 +269,13 @@ namespace ZapretCLI
 
         private static async Task UpdateConsoleTitle(IZapretManager zapretManager)
         {
+            var localization = ServiceProvider.GetRequiredService<ILocalizationService>();
             var isRunning = zapretManager.IsRunning();
-            var status = isRunning ? "Running" : "Stopped";
+            var status = isRunning ? localization.GetString("running") : localization.GetString("stopped");
             var stats = await zapretManager.GetStatusStatsAsync();
             var hostsCount = stats.TotalHosts;
             var ipsCount = stats.TotalIPs;
-            Console.Title = $"Zapret CLI - {status} • Hosts: {hostsCount} • IPs: {ipsCount}";
-        }
-
-        private static async Task MainLoop(IZapretManager zapretManager, IUpdateService updateService)
-        {
-            while (true)
-            {
-                var command = ConsoleUI.ReadLineWithPrompt("zapret-cli> ") ?? "";
-                if (string.IsNullOrWhiteSpace(command))
-                {
-                    ConsoleUI.WriteLine("Unknown command. Type 'help' for available commands.\n", ConsoleUI.yellow);
-                    continue;
-                }
-
-                var commandParts = command.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                var cmd = commandParts[0].ToLower().Trim();
-                var args = commandParts.Length > 1 ? commandParts[1].Trim() : null;
-
-                switch (cmd)
-                {
-                    case "start":
-                        await zapretManager.StartAsync();
-                        break;
-                    case "stop":
-                        await zapretManager.StopAsync();
-                        break;
-                    case "status":
-                        await zapretManager.ShowStatusAsync();
-                        break;
-                    case "add":
-                        await ListManager.AddDomainInteractive();
-                        break;
-                    case "update":
-                        await updateService.DownloadLatestReleaseAsync();
-                        break;
-                    case "exit":
-                        await zapretManager.StopAsync();
-                        return;
-                    case "help":
-                        ConsoleUI.ShowHelp();
-                        break;
-                    case "select":
-                        await zapretManager.SelectProfileAsync(args);
-                        break;
-                    case "info":
-                        zapretManager.ShowProfileInfo();
-                        break;
-                    case "list":
-                        await ShowProfileList(zapretManager);
-                        break;
-                    case "test":
-                        await zapretManager.TestProfilesAsync();
-                        break;
-                    case "toggle-game-filter":
-                        zapretManager.ToggleGameFilter();
-                        break;
-                    case "game-filter-status":
-                        ConsoleUI.WriteLine($"Game filter is currently {(zapretManager.IsGameFilterEnabled() ? "ENABLED" : "DISABLED")}",
-                            zapretManager.IsGameFilterEnabled() ? ConsoleUI.green : ConsoleUI.yellow);
-                        break;
-                    case "del-service":
-                        updateService.StopServicesAndProcesses();
-                        break;
-                    case "restart":
-                        await zapretManager.StopAsync();
-                        await Task.Delay(1000);
-                        await zapretManager.StartAsync();
-                        break;
-                    default:
-                        ConsoleUI.WriteLine("Unknown command. Type 'help' for available commands.", ConsoleUI.yellow);
-                        break;
-                }
-
-                ConsoleUI.WriteLine("");
-            }
-        }
-
-        private static async Task ShowProfileList(IZapretManager zapretManager)
-        {
-            await zapretManager.LoadAvailableProfilesAsync();
-            var profiles = await ServiceProvider.GetRequiredService<IProfileService>().GetAvailableProfilesAsync();
-            var currentProfile = zapretManager.GetCurrentProfile() ?? new Models.ZapretProfile();
-
-            ConsoleUI.WriteLine("Profiles:", ConsoleUI.yellow);
-            foreach (var profile in profiles)
-            {
-                if (currentProfile.Id == profile.Id)
-                {
-                    ConsoleUI.WriteLine($"► {profile.Name}", ConsoleUI.green);
-                }
-                else
-                {
-                    ConsoleUI.WriteLine($"• {profile.Name}", ConsoleUI.blue);
-                }
-                ConsoleUI.WriteLine($"  Description: {profile.Description}", ConsoleUI.white);
-            }
+            Console.Title = $"Zapret CLI - {status} • {localization.GetString("hosts")}: {hostsCount} • {localization.GetString("ips")}: {ipsCount}";
         }
 
         private static bool IsAdministrator()
@@ -267,10 +306,13 @@ namespace ZapretCLI
                     UseShellExecute = true
                 };
 
-                if (args != null && args.Length > 0)
+                // Correctly add arguments using ArgumentList
+                if (args != null)
                 {
-                    processStartInfo.Arguments = string.Join(" ", args.Select(arg =>
-                        arg.Contains(" ") ? $"\"{arg}\"" : arg));
+                    foreach (var arg in args)
+                    {
+                        processStartInfo.ArgumentList.Add(arg);
+                    }
                 }
 
                 Process.Start(processStartInfo);
@@ -278,7 +320,25 @@ namespace ZapretCLI
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Failed to restart as administrator: {ex.Message}", ConsoleUI.red);
+                // Fallback to minimal logging if ServiceProvider is not available
+                try
+                {
+                    if (ServiceProvider != null)
+                    {
+                        var localization = ServiceProvider?.GetRequiredService<ILocalizationService>();
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{localization?.GetString("restart_as_admin_fail") ?? "Failed to restart as administrator"}: {ex.Message}[/]");
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+                catch
+                {
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Failed to restart as administrator: {ex.Message}[/]");
+                }
+
+                Log.Error(ex, "Failed to restart as administrator");
                 throw;
             }
         }
@@ -297,13 +357,12 @@ namespace ZapretCLI
                 {
                     try
                     {
-                        ConsoleUI.WriteLine($"Terminating process: {processName} (PID: {process.Id})", ConsoleUI.blue);
                         process.Kill();
                         process.WaitForExit(5000);
                     }
                     catch (Exception ex)
                     {
-                        ConsoleUI.WriteLine($"[✗] Failed to terminate process {processName}: {ex.Message}", ConsoleUI.red);
+                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Failed to terminate process {{0}}: {{1}}[/]", processName, ex.Message);
                     }
                     finally
                     {
@@ -313,7 +372,7 @@ namespace ZapretCLI
             }
             catch (Exception ex)
             {
-                ConsoleUI.WriteLine($"[✗] Error checking processes: {ex.Message}", ConsoleUI.red);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Error checking processes: {{0}}[/]", ex.Message);
             }
         }
     }

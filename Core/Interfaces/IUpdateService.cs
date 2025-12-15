@@ -7,5 +7,6 @@
         Task CheckForCliUpdatesAsync();
         Task UpdateCliAsync();
         void StopServicesAndProcesses();
+        void Dispose();
     }
 }
