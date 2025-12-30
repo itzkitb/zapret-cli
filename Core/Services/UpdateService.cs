@@ -82,7 +82,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("updates_check_fail")}: {{0}}[/]", ex.Message);
-                _logger.LogInformation("Something went wrong1", ex);
+                _logger.LogError("Check for updates failed", ex);
                 await Task.Delay(500);
             }
         }
@@ -117,7 +117,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("cli_updates_check_fail")}: {{0}}[/]", ex.Message);
-                _logger.LogInformation("Something went wrong1", ex);
+                _logger.LogError("Check for CLI updates failed", ex);
                 await Task.Delay(500);
             }
         }
@@ -210,7 +210,7 @@ namespace ZapretCLI.Core.Services
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")}: {{0}}[/]", ex.Message);
                 AnsiConsole.WriteLine(ex.InnerException?.Message ?? ex.StackTrace);
-                _logger.LogInformation("Something went wrong1", ex);
+                _logger.LogError("Update CLI failed", ex);
             }
         }
 
@@ -280,7 +280,7 @@ namespace ZapretCLI.Core.Services
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")}: {{0}}[/]", ex.Message);
                 AnsiConsole.WriteLine(ex.InnerException?.Message ?? ex.StackTrace);
-                _logger.LogInformation("Something went wrong1", ex);
+                _logger.LogError("Zapret update fail", ex);
             }
         }
 
@@ -298,7 +298,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("services_stop_fail")}: {{0}}[/]", ex.Message);
-                _logger.LogInformation("Something went wrong1", ex);
+                _logger.LogError("Stop services failed", ex);
             }
         }
 
@@ -345,7 +345,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("service_delete_fail")} {{0}}: {{1}}[/]", serviceName, ex.Message);
-                _logger.LogInformation($"Something went wrong while stopping/deleting {serviceName}1", ex);
+                _logger.LogError($"Something went wrong while stopping/deleting {serviceName}", ex);
                 throw;
             }
         }
@@ -370,9 +370,11 @@ namespace ZapretCLI.Core.Services
                         {
                             AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("process_exited_with_fail")}[/]", processName);
                         }
+                        _logger.LogInformation($"PROCESS KILLED name=\"{process.ProcessName}\" hasexited={process.HasExited} exitcode={process.ExitCode} pid={process.Id}");
                     }
                     catch (Exception ex)
                     {
+                        _logger.LogError("Process kill failed", ex);
                         AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("process_terminate_fail")} {{0}}: {{1}}[/]", processName, ex.Message);
                     }
                     finally
@@ -384,7 +386,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("processes_terminate_fail")} {{0}}: {{1}}[/]", processName, ex.Message);
-                _logger.LogInformation($"Something went wrong while stopping/deleting {processName}1", ex);
+                _logger.LogError($"Something went wrong while stopping/deleting {processName}", ex);
             }
         }
 
@@ -407,7 +409,7 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error fetching latest release: {ex.Message}");
+                _logger.LogError($"Fetching latest release failed", ex);
                 throw;
             }
         }
@@ -467,7 +469,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("extract_fail")}: {{0}}[/]", ex.Message);
-                _logger.LogInformation($"Something went wrong1", ex);
+                _logger.LogError($"Archive extract failed", ex);
                 throw;
             }
         }
@@ -598,7 +600,7 @@ namespace ZapretCLI.Core.Services
                 catch (Exception ex)
                 {
                     AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("update_fail")} {{0}}: {{1}}[/]", file, ex.Message);
-                    _logger.LogInformation($"Something went wrong1", ex);
+                    _logger.LogError($"List merge failed", ex);
                 }
             }
         }
@@ -626,7 +628,7 @@ namespace ZapretCLI.Core.Services
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("temp_cleanup_fail")}: {{0}}[/]", ex.Message);
-                _logger.LogInformation($"Something went wrong1", ex);
+                _logger.LogError($"Cleanup temp failed", ex);
             }
         }
 

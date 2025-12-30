@@ -373,6 +373,7 @@ namespace ZapretCLI
                     }
                     catch (Exception ex)
                     {
+                        _logger.LogError($"Terminate process {processName} failed", ex);
                         AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Failed to terminate process {{0}}: {{1}}[/]", processName, ex.Message);
                     }
                     finally
@@ -383,6 +384,7 @@ namespace ZapretCLI
             }
             catch (Exception ex)
             {
+                _logger.LogError("Processes check failed", ex);
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Error checking processes: {{0}}[/]", ex.Message);
             }
         }

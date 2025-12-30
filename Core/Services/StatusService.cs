@@ -80,7 +80,7 @@ namespace ZapretCLI.Core.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError($"Error loading whitelist file {file}: {ex.Message}", ex);
+                        _logger.LogError($"Error loading whitelist file {file}", ex);
                     }
                 }
 
@@ -88,7 +88,7 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error initializing status service: {ex.Message}", ex);
+                _logger.LogError($"Error initializing status service", ex);
                 throw;
             }
         }
@@ -160,7 +160,7 @@ namespace ZapretCLI.Core.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error processing log line: {line}. Exception: {ex.Message}", ex);
+                _logger.LogError($"Error processing log line: {line}", ex);
             }
         }
 

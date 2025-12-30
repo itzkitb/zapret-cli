@@ -59,6 +59,7 @@ namespace ZapretCLI.Core.Managers
             }
             catch (Exception ex)
             {
+                _logger.LogError("Zapret stop failed", ex);
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_stop_fail"), ex.Message)}[/]");
             }
         }
@@ -187,6 +188,7 @@ namespace ZapretCLI.Core.Managers
             }
             catch (Exception ex)
             {
+                _logger.LogError("Zapret start failed", ex);
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_start_fail"), ex.Message)}[/]");
                 return false;
             }
@@ -292,22 +294,26 @@ namespace ZapretCLI.Core.Managers
                         if (response.IsSuccessStatusCode)
                         {
                             success = true;
+                            _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=false httperror=false");
                             message = $"{String.Format(_localizationService.GetString("http_success"), response.StatusCode)}";
                             AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("success")}: {{0}}[/]", message);
                         }
                         else
                         {
+                            _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=false httperror=true statuscode=\"{response.StatusCode}\"");
                             message = $"{String.Format(_localizationService.GetString("http_fail"), response.StatusCode)}";
                             AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                         }
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException ex)
                     {
+                        _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=true error=true", ex);
                         message = _localizationService.GetString("conn_timeout");
                         AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                     }
                     catch (Exception ex)
                     {
+                        _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=true", ex);
                         message = $"{_localizationService.GetString("error_occurred")}: {ex.Message}";
                         AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
                     }
