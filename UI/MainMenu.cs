@@ -72,6 +72,7 @@ namespace ZapretCLI.UI
                         _localizationService.GetString("menu_status"),
                         _localizationService.GetString("menu_edit"),
                         _localizationService.GetString("menu_update"),
+                        _localizationService.GetString("menu_diagnostics"),
                         _localizationService.GetString("menu_test"),
                         _localizationService.GetString("menu_settings"),
                         _localizationService.GetString("menu_exit")
@@ -134,6 +135,9 @@ namespace ZapretCLI.UI
                     case var c when c == _localizationService.GetString("menu_exit"):
                         await HandleExit();
                         break;
+                    case var c when c == _localizationService.GetString("menu_diagnostics"):
+                        await HandleDiagnostics();
+                        break;
                     default:
                         _logger.LogWarning($"Unknown menu choice: {choice}");
                         break;
@@ -143,6 +147,21 @@ namespace ZapretCLI.UI
             {
                 _logger.LogError($"Error handling menu choice \"{choice}\": {ex.Message}", ex);
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Error: {ex.Message}[/]");
+                await Task.Delay(1500);
+            }
+        }
+
+        private static async Task HandleDiagnostics()
+        {
+            try
+            {
+                var diagnosticsService = Program.ServiceProvider.GetRequiredService<IDiagnosticsService>();
+                await diagnosticsService.RunDiagnosticsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Diagnostics failed: {ex.Message}", ex);
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]Diagnostics failed: {ex.Message}[/]");
                 await Task.Delay(1500);
             }
         }

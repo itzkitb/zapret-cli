@@ -5,7 +5,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-	<VersionPrefix>1.0.2</VersionPrefix>
+	<VersionPrefix>1.0.3</VersionPrefix>
 	<Authors>SillyApps</Authors>
 	<Description>Donate: https://boosty.to/itzkitb</Description>
 	<PackageProjectUrl></PackageProjectUrl>
@@ -51,6 +51,10 @@
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Wiki\ru\" />
   </ItemGroup>
 
 </Project>

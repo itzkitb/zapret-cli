@@ -162,6 +162,15 @@ namespace ZapretCLI
             {
                 return new UpdateService(appPath, sp.GetRequiredService<IProfileService>(), sp.GetRequiredService<IZapretManager>(), sp.GetRequiredService<ILocalizationService>(), sp.GetRequiredService<ILoggerService>());
             });
+            services.AddSingleton<IDiagnosticsService, DiagnosticsService>(sp =>
+            {
+                return new DiagnosticsService(
+                    sp.GetRequiredService<ILocalizationService>(),
+                    sp.GetRequiredService<ILoggerService>(),
+                    sp.GetRequiredService<IFileSystemService>(),
+                    appPath
+                );
+            });
 
             return services.BuildServiceProvider();
         }
