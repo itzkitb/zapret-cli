@@ -173,6 +173,7 @@ namespace ZapretCLI.Core.Services
 
         private string BuildArguments(ZapretProfile profile)
         {
+            _logger.LogError($"BUILDING ARGUMENTS bin=\"{_settings.BinPath}\" lists=\"{_settings.ListsPath}\" gamefilter={_useGameFilter}");
             if (profile?.Arguments == null || profile.Arguments.Count == 0)
             {
                 _logger.LogInformation("Using default arguments for Zapret");

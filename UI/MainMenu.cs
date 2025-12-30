@@ -29,12 +29,10 @@ namespace ZapretCLI.UI
         private const string GeneralListFileName = "list-general.txt";
         private const string ExcludeListFileName = "list-exclude.txt";
 
-        private static readonly ConcurrentDictionary<string, Action> _menuActions = new ConcurrentDictionary<string, Action>();
         private static readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
         public static async Task ShowAsync(IServiceProvider serviceProvider)
         {
-            InitializeMenuActions();
             _zapretManager = serviceProvider.GetRequiredService<IZapretManager>();
             _updateService = serviceProvider.GetRequiredService<IUpdateService>();
             _configService = serviceProvider.GetRequiredService<IConfigService>();
@@ -42,12 +40,13 @@ namespace ZapretCLI.UI
             _localizationService = serviceProvider.GetRequiredService<ILocalizationService>();
             _logger = serviceProvider.GetRequiredService<ILoggerService>();
 
-            // Проверка автозапуска
+            // Checking startup
             var config = _configService.GetConfig();
             if (config.AutoStart && !string.IsNullOrEmpty(config.AutoStartProfile))
             {
                 try
                 {
+                    _logger.LogError($"Auto-starting {config.AutoStartProfile}...");
                     await _zapretManager.SelectProfileAsync(config.AutoStartProfile);
                     await _zapretManager.StartAsync();
                 }
@@ -68,14 +67,14 @@ namespace ZapretCLI.UI
                         new SelectionPrompt<string>()
                             .Title<string>($"[{ConsoleUI.greenName}]{Logo}[/]\n[{ConsoleUI.greyName}]{String.Format(_localizationService.GetString("title"), version)}[/]\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("navigation")}[/]")
                             .AddChoices(new[] {
-                        _zapretManager.IsRunning() ? _localizationService.GetString("menu_stop") : _localizationService.GetString("menu_start"),
-                        _localizationService.GetString("menu_status"),
-                        _localizationService.GetString("menu_edit"),
-                        _localizationService.GetString("menu_update"),
-                        _localizationService.GetString("menu_diagnostics"),
-                        _localizationService.GetString("menu_test"),
-                        _localizationService.GetString("menu_settings"),
-                        _localizationService.GetString("menu_exit")
+                                _zapretManager.IsRunning() ? _localizationService.GetString("menu_stop") : _localizationService.GetString("menu_start"),
+                                _localizationService.GetString("menu_status"),
+                                _localizationService.GetString("menu_edit"),
+                                _localizationService.GetString("menu_update"),
+                                _localizationService.GetString("menu_diagnostics"),
+                                _localizationService.GetString("menu_test"),
+                                _localizationService.GetString("menu_settings"),
+                                _localizationService.GetString("menu_exit")
                             })
                             .PageSize(10)
                             .MoreChoicesText($"[{ConsoleUI.greyName}]({_localizationService.GetString("other_options")})[/]")
@@ -96,15 +95,6 @@ namespace ZapretCLI.UI
                     await Task.Delay(1500);
                 }
             }
-        }
-
-        private static void InitializeMenuActions()
-        {
-            _menuActions[_localizationService?.GetString("restart_as_admin_fail") ?? "restart_as_admin_fail"] = () => { };
-            _menuActions[_localizationService?.GetString("menu_exit") ?? "menu_exit"] = async () =>
-            {
-                await HandleExit();
-            };
         }
 
         private static async Task HandleChoice(string choice)

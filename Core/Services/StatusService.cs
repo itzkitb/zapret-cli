@@ -58,12 +58,9 @@ namespace ZapretCLI.Core.Services
                     try
                     {
                         var fileName = Path.GetFileName(file);
-                        _logger.LogDebug($"Processing whitelist file: {fileName}");
-
                         var lines = await File.ReadAllLinesAsync(file);
 
-                        if (fileName.Contains("exclude", StringComparison.OrdinalIgnoreCase) ||
-                            fileName.Contains("ipset", StringComparison.OrdinalIgnoreCase))
+                        if (fileName.Contains("ipset", StringComparison.OrdinalIgnoreCase))
                         {
                             var count = CountValidLines(lines);
                             _ipCounts[fileName] = count;

@@ -56,7 +56,6 @@ namespace ZapretCLI.Core.Services
 
                     if (release != null && currentVersion < newVersion)
                     {
-
                         AnsiConsole.MarkupLine($"{_localizationService.GetString("new_version_title")}: [{ConsoleUI.greenName}]{{0}}[/]", release.TagName);
                         AnsiConsole.MarkupLine($"{_localizationService.GetString("current_version")}: [{ConsoleUI.greenName}]{{0}}[/]\nNew version: [{ConsoleUI.greenName}]{{1}}[/]", currentVersion, newVersion);
 
@@ -75,6 +74,7 @@ namespace ZapretCLI.Core.Services
                 }
                 else
                 {
+                    _logger.LogInformation($"This is the first launch");
                     AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("first_launch")}[/]");
                     await DownloadLatestReleaseAsync();
                 }
@@ -124,11 +124,26 @@ namespace ZapretCLI.Core.Services
 
         private async Task<GithubRelease> GetLatestCliRelease()
         {
-            var response = await _httpClient.GetStringAsync(CliApiUrl);
-            return JsonSerializer.Deserialize<GithubRelease>(response, new JsonSerializerOptions
+            try
             {
-                PropertyNameCaseInsensitive = true
-            });
+                _logger.LogInformation($"Fetching latest CLI release from {CliApiUrl}");
+                var response = await _httpClient.GetAsync(CliApiUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError($"GitHub API returned status code: {response.StatusCode}");
+                    throw new HttpRequestException($"Failed to fetch CLI release information: {response.StatusCode}");
+                }
+
+                var content = await response.Content.ReadAsStringAsync();
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                return JsonSerializer.Deserialize<GithubRelease>(content, options);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Fetching latest CLI release failed", ex);
+                throw;
+            }
         }
 
         private Version GetCliVersion()
@@ -140,7 +155,7 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
-                _logger.LogInformation($"Downloading new CLI version...");
+                _logger.LogInformation("Downloading new CLI version...");
                 AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("downloading")}[/]");
 
                 var release = await GetLatestCliRelease();
@@ -150,6 +165,7 @@ namespace ZapretCLI.Core.Services
                 }
 
                 // Looking for the .exe installer in the release
+                _logger.LogInformation("Search for .exe installer");
                 var asset = release.Assets.FirstOrDefault(a =>
                     a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
                     a.Name.IndexOf("setup", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -160,11 +176,13 @@ namespace ZapretCLI.Core.Services
                 }
 
                 // Create a temporary download folder
+                _logger.LogInformation("Creating a temporary installation folder");
                 var tempDir = Path.Combine(Path.GetTempPath(), "zapret_cli_update");
                 Directory.CreateDirectory(tempDir);
                 var downloadPath = Path.Combine(tempDir, asset.Name);
 
                 // Downloading the file
+                _logger.LogInformation("Downloading the installer");
                 using (var response = await _httpClient.GetAsync(asset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead))
                 {
                     response.EnsureSuccessStatusCode();
@@ -227,6 +245,7 @@ namespace ZapretCLI.Core.Services
                 }
 
                 // Select the first suitable archive (ZIP or RAR)
+                _logger.LogInformation("Search for a .zip/.rar file in a release");
                 var asset = release.Assets.FirstOrDefault(a =>
                     a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
                     a.Name.EndsWith(".rar", StringComparison.OrdinalIgnoreCase));
@@ -237,6 +256,7 @@ namespace ZapretCLI.Core.Services
                 }
 
                 // Create a temporary download folder
+                _logger.LogInformation("Creating a temporary folder");
                 var tempDir = Path.Combine(Path.GetTempPath(), "zapret_update");
                 Directory.CreateDirectory(tempDir);
 
@@ -317,6 +337,7 @@ namespace ZapretCLI.Core.Services
                     if (service.Status != ServiceControllerStatus.Stopped)
                     {
                         AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("service_stop_fail")}[/]", serviceName);
+                        _logger.LogWarning($"SERVICE STOP FAIL name=\"{serviceName}\"");
                     }
 
                     service.Dispose();
@@ -336,11 +357,12 @@ namespace ZapretCLI.Core.Services
 
                     process.Start();
                     process.WaitForExit(5000);
+                    _logger.LogInformation($"SERVICE REMOVED name=\"{serviceName}\"");
                 }
             }
             catch (Exception ex) when (ex is InvalidOperationException || ex is Win32Exception)
             {
-                //ConsoleUI.WriteLine($"  [✓] Service {serviceName} not found", ConsoleUI.green);
+                _logger.LogError($"Service {serviceName} already stopped", ex);
             }
             catch (Exception ex)
             {

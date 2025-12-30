@@ -45,11 +45,11 @@ namespace ZapretCLI.Core.Services
                 // Search for .bat files in different possible locations
                 var searchPaths = new[]
                 {
-            extractedPath,
-            Path.Combine(extractedPath, "bat_profiles"),
-            Path.Combine(extractedPath, "profiles"),
-            Path.Combine(extractedPath, "strategies")
-        };
+                    extractedPath,
+                    Path.Combine(extractedPath, "bat_profiles"),
+                    Path.Combine(extractedPath, "profiles"),
+                    Path.Combine(extractedPath, "strategies")
+                };
 
                 foreach (var searchPath in searchPaths)
                 {
@@ -107,6 +107,7 @@ namespace ZapretCLI.Core.Services
 
         public ZapretProfile ParseBatFile(string filePath)
         {
+            _logger.LogInformation($"Parsing profile: {filePath}");
             var fileName = Path.GetFileNameWithoutExtension(filePath);
             string[] lines;
             try
@@ -181,9 +182,11 @@ namespace ZapretCLI.Core.Services
             if (fullCommand.Length > 0)
             {
                 profile.Arguments = ParseArguments(fullCommand.ToString());
+                _logger.LogInformation($"Profile {profile.Name} parsed");
                 return profile;
             }
 
+            _logger.LogInformation($"The profile was skipped because the fullCommand length was 0: {filePath}");
             return null;
         }
 

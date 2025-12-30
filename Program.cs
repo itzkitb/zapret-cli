@@ -229,13 +229,20 @@ namespace ZapretCLI
 
         private static async Task RunApplicationAsync(string[] args)
         {
+            Stopwatch sp = Stopwatch.StartNew();
             // Initialization
             Console.Title = $"Zapret CLI - v.{MainMenu.version}";
 
             _logger = ServiceProvider.GetRequiredService<ILoggerService>();
+            _logger.LogInformation($"========================================");
             _logger.LogInformation($"Zapret CLI - v.{MainMenu.version}");
+            var runId = Guid.NewGuid().ToString("N");
+            _logger.LogInformation($"Session: {runId}");
+            _logger.LogInformation($"Process ID: {Environment.ProcessId}, Thread ID: {Thread.CurrentThread.ManagedThreadId}");
             _logger.LogInformation($"Launch arguments: {JsonSerializer.Serialize(args)}");
+            _logger.LogInformation($"Working directory: {Environment.CurrentDirectory}");
             _logger.LogInformation($"OS: {System.Runtime.InteropServices.RuntimeInformation.OSDescription}");
+            _logger.LogInformation($"Host: {Environment.MachineName}, User: {Environment.UserName}");
             _logger.LogInformation($".NET runtime: {Environment.Version}");
             _logger.LogInformation($"Initializing...");
 
@@ -249,6 +256,7 @@ namespace ZapretCLI
             // Run update checks
             try
             {
+                _logger.LogInformation($"Checking for CLI and Zapret updates...");
                 await Task.Run(async () =>
                 {
                     await updateService.CheckForUpdatesAsync();
@@ -257,7 +265,7 @@ namespace ZapretCLI
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("Update checks were canceled.");
+                _logger.LogWarning("Update checks were canceled");
             }
             catch (Exception ex)
             {
@@ -270,7 +278,8 @@ namespace ZapretCLI
             _statusTimer.Start();
 
             // Show main menu
-            _logger.LogInformation($"Initialization completed...");
+            sp.Stop();
+            _logger.LogInformation($"Initialization completed! ({sp.ElapsedMilliseconds}ms)");
             await MainMenu.ShowAsync(ServiceProvider);
         }
 

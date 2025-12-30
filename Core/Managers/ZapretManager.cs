@@ -53,6 +53,7 @@ namespace ZapretCLI.Core.Managers
 
             try
             {
+                _logger.LogError("Stopping Zapret...");
                 await _processService.StopZapretAsync(_zapretProcess);
                 _zapretProcess = null;
                 if (showLogs) AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("zapret_stop")}[/]");
@@ -96,6 +97,7 @@ namespace ZapretCLI.Core.Managers
 
         public async Task SelectProfileAsync(string profileName = null)
         {
+            _logger.LogError($"Selecting profile... profileName=\"{profileName}\"");
             if (_availableProfiles.Count == 0)
                 await LoadAvailableProfilesAsync();
 
@@ -121,9 +123,12 @@ namespace ZapretCLI.Core.Managers
                     new SelectionPrompt<string>()
                         .Title($"[{ConsoleUI.greenName}]{_localizationService.GetString("available_profiles")}[/]\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("navigation")}[/]")
                         .AddChoices(profileNames)
-                        .PageSize(10)
                         .MoreChoicesText($"[{ConsoleUI.greyName}]({_localizationService.GetString("other_options")})[/]")
                         .HighlightStyle(new Style(Color.PaleGreen1))
+                        .WrapAround(true)
+                        .PageSize(15)
+                        .EnableSearch()
+                        .SearchPlaceholderText(_localizationService.GetString("search_placeholder"))
                 );
 
                 _currentProfile = _availableProfiles.FirstOrDefault(p =>
@@ -208,6 +213,7 @@ namespace ZapretCLI.Core.Managers
 
         public void ToggleGameFilter()
         {
+            _logger.LogError($"GAME FILTER TOGGLED gameFilterEnabled={_gameFilterEnabled}");
             _gameFilterEnabled = !_gameFilterEnabled;
             _processService.SetGameFilter(_gameFilterEnabled);
             _configService.UpdateGameFilter(_gameFilterEnabled);
