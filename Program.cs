@@ -148,6 +148,16 @@ namespace ZapretCLI
                 var logger = sp.GetRequiredService<ILoggerService>();
                 return new ProfileService(appPath, localizationService, logger);
             });
+            services.AddSingleton<ITestService>(sp =>
+            {
+                return new TestService(
+                    sp.GetRequiredService<IZapretManager>(),
+                    sp.GetRequiredService<ILocalizationService>(),
+                    sp.GetRequiredService<ILoggerService>(),
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IProfileService>()
+                );
+            });
             services.AddSingleton<IZapretManager, ZapretManager>(sp =>
             {
                 var processService = sp.GetRequiredService<IProcessService>();
@@ -170,6 +180,17 @@ namespace ZapretCLI
                     sp.GetRequiredService<IFileSystemService>(),
                     appPath
                 );
+            });
+            services.AddSingleton<IExportService, ExportService>(sp =>
+            {
+                var fileSystemService = sp.GetRequiredService<IFileSystemService>();
+                var statusService = sp.GetRequiredService<IStatusService>();
+                var profileService = sp.GetRequiredService<IProfileService>();
+                var configService = sp.GetRequiredService<IConfigService>();
+                var zapretManager = sp.GetRequiredService<IZapretManager>();
+                var localizationService = sp.GetRequiredService<ILocalizationService>();
+                var logger = sp.GetRequiredService<ILoggerService>();
+                return new ExportService(appPath, fileSystemService, statusService, profileService, configService, zapretManager, localizationService, logger);
             });
 
             return services.BuildServiceProvider();

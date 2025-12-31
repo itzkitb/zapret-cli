@@ -1,7 +1,10 @@
 ﻿using Spectre.Console;
+using System;
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
+using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
@@ -147,7 +150,7 @@ namespace ZapretCLI.Core.Managers
             }
         }
 
-        public async Task<bool> StartAsync(bool showLogs = true)
+        public async Task<bool> StartAsync(bool showLogs = true, bool filterAllIp = false)
         {
             if (_currentProfile == null)
             {
@@ -171,7 +174,7 @@ namespace ZapretCLI.Core.Managers
                 // Subscribing to the initialization event
                 _processService.WindivertInitialized += handler;
 
-                _zapretProcess = await _processService.StartZapretAsync(_currentProfile);
+                _zapretProcess = await _processService.StartZapretAsync(_currentProfile, filterAllIp);
 
                 // Waiting for initialization or timeout
                 var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(timeout));
@@ -181,7 +184,8 @@ namespace ZapretCLI.Core.Managers
 
                 if (completedTask != tcs.Task)
                 {
-                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{String.Format(_localizationService.GetString("zapret_start_timeout"), timeout.Seconds)}[/]");
+                    _logger.LogWarning($"Profile start failed: Timeout");
+                    AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]<{_currentProfile.Name}> {String.Format(_localizationService.GetString("zapret_start_timeout"), timeout.Seconds)}[/]");
                     await StopAsync();
                     return false;
                 }
@@ -234,138 +238,6 @@ namespace ZapretCLI.Core.Managers
         public ZapretProfile GetCurrentProfile()
         {
             return _currentProfile;
-        }
-
-        public async Task TestProfilesAsync()
-        {
-            var initialProfile = _currentProfile;
-            if (IsRunning()) await StopAsync(false);
-
-            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profile_testing_title")}[/]");
-            AnsiConsole.MarkupLine($"[{ConsoleUI.greyName}]{_localizationService.GetString("close_apps_warning")}[/]\n");
-
-            var domain = AnsiConsole.Prompt(new TextPrompt<string>($"[{ConsoleUI.greenName}]{_localizationService.GetString("test_domain_ask")}[/] [{ConsoleUI.greyName}](example.com)[/]:"));
-
-            if (string.IsNullOrWhiteSpace(domain))
-            {
-                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("empty_domain")}[/]");
-            }
-            bool isBlocked = await IsDomainBlocked(domain);
-
-            if (!isBlocked)
-            {
-                AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("domain_accessible_warning")}[/]", domain);
-                if (!AnsiConsole.Confirm(_localizationService.GetString("continue_anyway")))
-                    return;
-            }
-
-            await LoadAvailableProfilesAsync();
-            if (!_availableProfiles.Any())
-            {
-                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles_to_test")}[/]");
-                return;
-            }
-
-            var results = new List<(string ProfileName, bool Success, string Message)>();
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            string testUrl = $"https://{domain}";
-
-            await ListManager.AddDomainToFile(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lists", "list-general.txt"), domain, _localizationService, _logger);
-
-            AnsiConsole.MarkupLine($"\n[{ConsoleUI.greyName}]{_localizationService.GetString("starting_tests")}[/]", $"[/][{ConsoleUI.greenName}]{domain}[/][{ConsoleUI.greyName}]", $"[/][{ConsoleUI.greenName}]{_availableProfiles.Count}[/][{ConsoleUI.greyName}]");
-            AnsiConsole.MarkupLine($"[{ConsoleUI.darkGreyName}]--------------------[/]");
-
-            foreach (var profile in _availableProfiles)
-            {
-                AnsiConsole.MarkupLine($"\n[{ConsoleUI.orangeName}]{_localizationService.GetString("testing_profile")}[/]", profile.Name);
-                if (IsRunning()) await StopAsync(false);
-                _currentProfile = profile;
-
-                try
-                {
-                    if (!await StartAsync(false))
-                    {
-                        results.Add((profile.Name, false, _localizationService.GetString("init_failed")));
-                        continue;
-                    }
-
-                    await Task.Delay(500);
-                    bool success = false;
-                    string message = "";
-
-                    try
-                    {
-                        var response = await httpClient.GetAsync(testUrl, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
-
-                        if (response.IsSuccessStatusCode)
-                        {
-                            success = true;
-                            _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=false httperror=false");
-                            message = $"{String.Format(_localizationService.GetString("http_success"), response.StatusCode)}";
-                            AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("success")}: {{0}}[/]", message);
-                        }
-                        else
-                        {
-                            _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=false httperror=true statuscode=\"{response.StatusCode}\"");
-                            message = $"{String.Format(_localizationService.GetString("http_fail"), response.StatusCode)}";
-                            AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
-                        }
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=true error=true", ex);
-                        message = _localizationService.GetString("conn_timeout");
-                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError($"TEST RESULT profile=\"{profile.Name}\" timedout=false error=true", ex);
-                        message = $"{_localizationService.GetString("error_occurred")}: {ex.Message}";
-                        AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("failed")}: {{0}}[/]", message);
-                    }
-
-                    results.Add((profile.Name, success, message));
-                }
-                finally
-                {
-                    if (IsRunning()) await StopAsync(false);
-                    await Task.Delay(1000);
-                }
-            }
-
-            AnsiConsole.MarkupLine($"\n[{ConsoleUI.greyName}]{_localizationService.GetString("test_results")}[/]");
-            AnsiConsole.MarkupLine($"[{ConsoleUI.darkGreyName}]--------------------[/]");
-
-            var successfulProfiles = results.Where(r => r.Success).ToList();
-            if (successfulProfiles.Any())
-            {
-                AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("profiles_bypassed")}[/]\n", successfulProfiles.Count);
-                foreach (var result in successfulProfiles)
-                    AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}] - {result.ProfileName}[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("no_profiles_bypassed")}[/]");
-            }
-
-            _currentProfile = initialProfile;
-            AnsiConsole.MarkupLine($"\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("press_any_key")}[/]");
-            Console.ReadKey(true);
-        }
-
-        private async Task<bool> IsDomainBlocked(string domain)
-        {
-            try
-            {
-                using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                var testUrl = $"https://{domain}";
-                var response = await httpClient.GetAsync(testUrl, new CancellationTokenSource(TimeSpan.FromSeconds(7)).Token);
-                return false;
-            }
-            catch
-            {
-                return true;
-            }
         }
     }
 }

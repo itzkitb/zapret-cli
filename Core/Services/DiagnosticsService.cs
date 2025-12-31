@@ -36,6 +36,7 @@ namespace ZapretCLI.Core.Services
 
         public async Task RunDiagnosticsAsync()
         {
+            _logger.LogInformation("=== Starting comprehensive diagnostics ===");
             ConsoleUI.Clear();
             AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("diagnostics_title")}[/]");
             AnsiConsole.WriteLine();
@@ -56,6 +57,7 @@ namespace ZapretCLI.Core.Services
             await CheckConflictingBypassesAsync();
             await ClearDiscordCacheAsync();
 
+            _logger.LogInformation($"Diagnostics completed. Total checks performed: 15");
             AnsiConsole.MarkupLine($"\n[{ConsoleUI.darkGreyName}]{_localizationService.GetString("press_any_key")}[/]");
             Console.ReadKey(true);
         }
@@ -65,6 +67,7 @@ namespace ZapretCLI.Core.Services
             try
             {
                 using var service = new ServiceController("BFE");
+                _logger.LogDebug($"BFE service status: {service.Status}");
                 if (service.Status == ServiceControllerStatus.Running)
                 {
                     AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("bfe_check_passed")}[/]");
@@ -81,7 +84,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("bfe_check_failed")}[/]");
                 _logger.LogError($"BFE check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckProxySettingsAsync()
@@ -93,6 +95,9 @@ namespace ZapretCLI.Core.Services
                 {
                     var proxyEnable = key.GetValue("ProxyEnable") as int?;
                     var proxyServer = key.GetValue("ProxyServer") as string;
+
+                    _logger.LogDebug($"ProxyEnable value: {proxyEnable?.ToString() ?? "null"}");
+                    _logger.LogDebug($"ProxyServer value: {proxyServer ?? "null"}");
 
                     if (proxyEnable == 1 && !string.IsNullOrEmpty(proxyServer))
                     {
@@ -116,7 +121,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("proxy_check_failed")}[/]");
                 _logger.LogError($"Proxy check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckNetshAvailabilityAsync()
@@ -156,13 +160,13 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("netsh_check_failed")}[/]");
                 _logger.LogError($"netsh check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckTcpTimestampsAsync()
         {
             try
             {
+                _logger.LogInformation("Verifying TCP timestamps configuration");
                 var process = new Process
                 {
                     StartInfo = new ProcessStartInfo
@@ -186,6 +190,7 @@ namespace ZapretCLI.Core.Services
                 }
                 else
                 {
+                    _logger.LogWarning("TCP timestamps are disabled. Attempting to enable...");
                     AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{_localizationService.GetString("tcp_timestamps_disabled")}[/]");
 
                     var enableProcess = new Process
@@ -219,7 +224,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("tcp_timestamps_check_failed")}[/]");
                 _logger.LogError($"TCP timestamps check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckAdguardAsync()
@@ -244,7 +248,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("adguard_check_failed")}[/]");
                 _logger.LogError($"Adguard check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckKillerServicesAsync()
@@ -287,7 +290,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("checkpoint_check_passed")}[/]");
                 _logger.LogInformation("Checkpoint check passed");
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckSmartByteServicesAsync()
@@ -301,7 +303,18 @@ namespace ZapretCLI.Core.Services
         private async Task CheckWinDivertFileAsync()
         {
             var binPath = Path.Combine(_appPath, "bin");
+
+            _logger.LogDebug($"Checking WinDivert files in: {binPath}");
+
+            if (!Directory.Exists(binPath))
+            {
+                AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{_localizationService.GetString("windivert_file_missing")}[/]");
+                _logger.LogError($"Bin directory not found: {binPath}");
+                return;
+            }
+
             var sysFiles = Directory.GetFiles(binPath, "*.sys");
+            _logger.LogDebug($"Found {sysFiles.Length} .sys files: {string.Join(", ", sysFiles)}");
 
             if (sysFiles.Length == 0)
             {
@@ -313,7 +326,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{string.Format(_localizationService.GetString("windivert_file_found"), Path.GetFileName(sysFiles[0]))}[/]");
                 _logger.LogInformation($"WinDivert file found: {sysFiles[0]}");
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckVpnServicesAsync()
@@ -346,7 +358,6 @@ namespace ZapretCLI.Core.Services
                 AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("vpn_check_passed")}[/]");
                 _logger.LogInformation("VPN check passed");
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckSecureDnsAsync()
@@ -375,7 +386,6 @@ namespace ZapretCLI.Core.Services
             {
                 _logger.LogError($"Secure DNS check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckWinDivertConflictsAsync()
@@ -409,7 +419,6 @@ namespace ZapretCLI.Core.Services
             {
                 _logger.LogError($"WinDivert conflict check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task CheckConflictingBypassesAsync()
@@ -417,16 +426,19 @@ namespace ZapretCLI.Core.Services
             var conflictingServices = new[] { "GoodbyeDPI", "discordfix_zapret", "winws1", "winws2" };
             var foundConflicts = new List<string>();
 
+            _logger.LogDebug($"Checking for conflicting services: {string.Join(", ", conflictingServices)}");
+
             foreach (var service in conflictingServices)
             {
-                if (await ServiceExistsAsync(service))
-                {
-                    foundConflicts.Add(service);
-                }
+                bool exists = await ServiceExistsAsync(service);
+                _logger.LogDebug($"Service '{service}' exists: {exists}");
+
+                if (exists) foundConflicts.Add(service);
             }
 
             if (foundConflicts.Count > 0)
             {
+                _logger.LogWarning($"Conflicting services detected: {string.Join(", ", foundConflicts)}");
                 var conflictsList = string.Join(", ", foundConflicts);
                 AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{string.Format(_localizationService.GetString("conflicting_services_found"), conflictsList)}[/]");
 
@@ -443,9 +455,9 @@ namespace ZapretCLI.Core.Services
             }
             else
             {
+                _logger.LogInformation("No conflicting services found");
                 AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{_localizationService.GetString("conflict_check_passed")}[/]");
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task ClearDiscordCacheAsync()
@@ -500,7 +512,6 @@ namespace ZapretCLI.Core.Services
                     AnsiConsole.MarkupLine($"[{ConsoleUI.orangeName}]{string.Format(_localizationService.GetString("cache_not_found"), dirPath)}[/]");
                 }
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task<bool> IsServiceRunningAsync(string serviceName)
@@ -538,6 +549,8 @@ namespace ZapretCLI.Core.Services
 
         private async Task<string> RunPowerShellCommandAsync(string command)
         {
+            _logger.LogDebug($"Executing PowerShell command: {command}");
+
             try
             {
                 var process = new Process
@@ -554,8 +567,23 @@ namespace ZapretCLI.Core.Services
                 };
 
                 process.Start();
-                var output = await process.StandardOutput.ReadToEndAsync();
+
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
+
                 await process.WaitForExitAsync();
+
+                var output = await outputTask;
+                var errors = await errorTask;
+
+                _logger.LogDebug($"PowerShell exit code: {process.ExitCode}");
+                _logger.LogDebug($"Command output: {output.Trim()}");
+
+                if (!string.IsNullOrEmpty(errors))
+                {
+                    _logger.LogWarning($"PowerShell errors: {errors.Trim()}");
+                }
+
                 return output;
             }
             catch
@@ -589,7 +617,6 @@ namespace ZapretCLI.Core.Services
             {
                 _logger.LogError($"{pattern} check failed: {ex.Message}", ex);
             }
-            AnsiConsole.WriteLine();
         }
 
         private async Task RemoveServiceAsync(string serviceName)
@@ -631,6 +658,9 @@ namespace ZapretCLI.Core.Services
         {
             try
             {
+                _logger.LogWarning($"ATTEMPTING TO DELETE SERVICE: {serviceName}");
+                _logger.LogDebug($"Stopping service {serviceName} before deletion");
+
                 var stopProcess = new Process
                 {
                     StartInfo = new ProcessStartInfo
@@ -646,6 +676,8 @@ namespace ZapretCLI.Core.Services
 
                 stopProcess.Start();
                 await stopProcess.WaitForExitAsync();
+
+                _logger.LogDebug($"Executing: sc delete \"{serviceName}\"");
 
                 var deleteProcess = new Process
                 {
@@ -665,6 +697,7 @@ namespace ZapretCLI.Core.Services
 
                 if (await ServiceExistsAsync(serviceName))
                 {
+                    _logger.LogError($"Service {serviceName} STILL EXISTS after deletion attempt");
                     AnsiConsole.MarkupLine($"[{ConsoleUI.redName}]{string.Format(_localizationService.GetString("service_delete_failed"), serviceName)}[/]");
 
                     var conflictingServices = new[] { "GoodbyeDPI" };
@@ -716,6 +749,7 @@ namespace ZapretCLI.Core.Services
                 }
                 else
                 {
+                    _logger.LogInformation($"Service {serviceName} successfully deleted");
                     AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{string.Format(_localizationService.GetString("service_deleted"), serviceName)}[/]");
                 }
             }

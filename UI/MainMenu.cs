@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
 using ZapretCLI.Core.Managers;
+using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
 
 namespace ZapretCLI.UI
@@ -15,6 +16,7 @@ namespace ZapretCLI.UI
         private static IConfigService _configService;
         private static IProfileService _profileService;
         private static ILocalizationService _localizationService;
+        private static ITestService _testService;
         private static bool _exitRequested = false;
         private static ILoggerService _logger;
 
@@ -37,6 +39,7 @@ namespace ZapretCLI.UI
             _updateService = serviceProvider.GetRequiredService<IUpdateService>();
             _configService = serviceProvider.GetRequiredService<IConfigService>();
             _profileService = serviceProvider.GetRequiredService<IProfileService>();
+            _testService = serviceProvider.GetRequiredService<ITestService>();
             _localizationService = serviceProvider.GetRequiredService<ILocalizationService>();
             _logger = serviceProvider.GetRequiredService<ILoggerService>();
 
@@ -160,7 +163,29 @@ namespace ZapretCLI.UI
         {
             try
             {
-                await _zapretManager.TestProfilesAsync();
+                var testTypeChoice = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                        .Title($"[{ConsoleUI.greenName}]{_localizationService.GetString("select_test_type")}[/]")
+                        .AddChoices(new[]
+                        {
+                            _localizationService.GetString("standard_tests"),
+                            _localizationService.GetString("dpi_tests"),
+                            _localizationService.GetString("back")
+                        })
+                        .HighlightStyle(new Style(Color.PaleGreen1))
+                        .WrapAround(true)
+                );
+
+                if (testTypeChoice == _localizationService.GetString("back"))
+                {
+                    return;
+                }
+
+                var testType = testTypeChoice == _localizationService.GetString("standard_tests")
+                    ? TestType.Standard
+                    : TestType.Dpi;
+
+                await _testService.RunTestsAsync(testType);
             }
             catch (Exception ex)
             {
@@ -200,9 +225,9 @@ namespace ZapretCLI.UI
                     new SelectionPrompt<string>()
                         .Title($"[{ConsoleUI.greenName}]{_localizationService.GetString("select_list")}[/]\n[gray]{_localizationService.GetString("navigation")}[/]")
                         .AddChoices(new[] {
-                _localizationService.GetString("general_list"),
-                _localizationService.GetString("exclude_list"),
-                _localizationService.GetString("back")
+                            _localizationService.GetString("general_list"),
+                            _localizationService.GetString("exclude_list"),
+                            _localizationService.GetString("back")
                         })
                         .HighlightStyle(new Style(Color.PaleGreen1))
                         .WrapAround(true)
@@ -377,6 +402,7 @@ namespace ZapretCLI.UI
                         $"{_localizationService.GetString("auto_profile")}: {(string.IsNullOrEmpty(config.AutoStartProfile) ? $"[{ConsoleUI.greyName}]{_localizationService.GetString("not_specified")}[/]" : $"[{ConsoleUI.greenName}]{config.AutoStartProfile}[/]")}",
                         $"{_localizationService.GetString("game_filter")}: {(config.GameFilterEnabled ? $"[{ConsoleUI.greenName}]{_localizationService.GetString("enabled")}[/]" : $"[{ConsoleUI.redName}]{_localizationService.GetString("disabled")}[/]")}",
                         _localizationService.GetString("delete_service"),
+                        _localizationService.GetString("export_data"),
                         _localizationService.GetString("back")
                         })
                         .HighlightStyle(new Style(Color.PaleGreen1))
@@ -415,14 +441,31 @@ namespace ZapretCLI.UI
                     case var c when c == _localizationService.GetString("back"):
                         back = true;
                         break;
+
+                    case var c when c == _localizationService.GetString("export_data"):
+                        await HandleExportData();
+                        break;
                 }
             }
         }
+
+        private static async Task HandleExportData()
+        {
+            _logger.LogInformation("User requested data export");
+            var exportService = Program.ServiceProvider.GetRequiredService<IExportService>();
+            await exportService.ExportDataAsync();
+
+            AnsiConsole.MarkupLine($"[{ConsoleUI.darkGreyName}]{_localizationService.GetString("press_any_key")}[/]");
+            Console.ReadKey(true);
+            ConsoleUI.Clear();
+        }
+
         private static string GetLanguageDisplayName(string code)
         {
             var languages = _localizationService.GetAvailableLanguages();
             return languages.TryGetValue(code, out var name) ? name : code;
         }
+
         private static async Task HandleLanguageSettings()
         {
             var currentLang = _localizationService.GetCurrentLanguage();
@@ -446,6 +489,7 @@ namespace ZapretCLI.UI
                 ConsoleUI.Clear();
             }
         }
+
         private static async Task<bool> SelectDefaultProfile()
         {
             await _zapretManager.LoadAvailableProfilesAsync();

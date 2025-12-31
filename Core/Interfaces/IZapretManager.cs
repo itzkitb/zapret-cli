@@ -5,7 +5,7 @@ namespace ZapretCLI.Core.Interfaces
     public interface IZapretManager
     {
         Task InitializeAsync();
-        Task<bool> StartAsync(bool showLogs = true);
+        Task<bool> StartAsync(bool showLogs = true, bool filterAllIp = false);
         Task StopAsync(bool showLogs = true);
         Task ShowStatusAsync();
         Task SelectProfileAsync(string profileName = null);
@@ -16,6 +16,5 @@ namespace ZapretCLI.Core.Interfaces
         bool IsGameFilterEnabled();
         bool IsRunning();
         Task<ListStats> GetStatusStatsAsync();
-        Task TestProfilesAsync();
     }
 }

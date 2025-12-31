@@ -39,6 +39,7 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="SharpCompress" Version="0.41.0" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.1" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
   </ItemGroup>
 

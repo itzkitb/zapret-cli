@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using SharpCompress.Common;
+using System.Diagnostics;
 using System.Text;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
@@ -42,7 +43,7 @@ namespace ZapretCLI.Core.Services
             }
         }
 
-        public async Task<Process> StartZapretAsync(ZapretProfile profile)
+        public async Task<Process> StartZapretAsync(ZapretProfile profile, bool filterAllIp = false)
         {
             if (profile == null)
             {
@@ -61,7 +62,7 @@ namespace ZapretCLI.Core.Services
             var startInfo = new ProcessStartInfo
             {
                 FileName = _winwsPath,
-                Arguments = BuildArguments(profile),
+                Arguments = BuildArguments(profile, filterAllIp),
                 WorkingDirectory = Path.Combine(_appPath, _settings.BinPath),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -171,9 +172,9 @@ namespace ZapretCLI.Core.Services
             }
         }
 
-        private string BuildArguments(ZapretProfile profile)
+        private string BuildArguments(ZapretProfile profile, bool filterAllIp = false)
         {
-            _logger.LogError($"BUILDING ARGUMENTS bin=\"{_settings.BinPath}\" lists=\"{_settings.ListsPath}\" gamefilter={_useGameFilter}");
+            _logger.LogInformation($"BUILDING ARGUMENTS bin=\"{_settings.BinPath}\" lists=\"{_settings.ListsPath}\" gamefilter={_useGameFilter} filterAllIp={filterAllIp}");
             if (profile?.Arguments == null || profile.Arguments.Count == 0)
             {
                 _logger.LogInformation("Using default arguments for Zapret");
@@ -194,6 +195,21 @@ namespace ZapretCLI.Core.Services
             }
 
             var result = string.Join(" ", finalArguments);
+
+            if (filterAllIp)
+            {
+                var path = Path.Combine(_settings.ListsPath, "empty-ipset.txt");
+                if (!File.Exists(path))
+                {
+                    using (StreamWriter writer = new StreamWriter(path, false))
+                    {
+                        writer.Write("");
+                    }
+                }
+
+                result.Replace("ipset-all.txt", "empty-ipset.txt");
+            }
+
             _logger.LogDebug($"Built arguments: {result}");
             return result;
         }
