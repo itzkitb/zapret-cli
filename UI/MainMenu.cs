@@ -1,10 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
-using System.Collections.Concurrent;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
 using ZapretCLI.Core.Managers;
-using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
 
 namespace ZapretCLI.UI

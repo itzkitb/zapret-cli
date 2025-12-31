@@ -468,7 +468,9 @@ namespace ZapretCLI.Core.Services
                     { "export_success", "Data successfully exported to: {0}" },
                     { "export_fail", "Export failed: {0}" },
                     { "exporting", "Exporting... This may take some time..." },
-                    { "invalid_domain_format", "Invalid domain format! (Example: example.com, not https://example.com)" }
+                    { "invalid_domain_format", "Invalid domain format! (Example: example.com, not https://example.com)" },
+                    { "update_profiles", "Update profiles and lists" },
+                    { "update_app", "Update Zapret CLI" }
                 };
             }
             else

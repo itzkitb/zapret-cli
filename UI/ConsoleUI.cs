@@ -1,6 +1,4 @@
-﻿using Pastel;
-
-namespace ZapretCLI.UI
+﻿namespace ZapretCLI.UI
 {
     public static class ConsoleUI
     {

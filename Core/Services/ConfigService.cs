@@ -1,6 +1,5 @@
 ﻿using Microsoft.Win32;
 using System.Globalization;
-using System.Reflection;
 using System.Text.Json;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;

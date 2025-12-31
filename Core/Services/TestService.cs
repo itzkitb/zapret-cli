@@ -1,17 +1,10 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Spectre.Console;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
+﻿using Spectre.Console;
 using System.Net.NetworkInformation;
 using System.Security.Authentication;
 using System.Text;
-using System.Threading.Tasks;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
 using ZapretCLI.Core.Managers;
-using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 

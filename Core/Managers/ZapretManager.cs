@@ -1,10 +1,7 @@
 ﻿using Spectre.Console;
-using System;
 using System.Diagnostics;
-using System.Net.NetworkInformation;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
-using ZapretCLI.Core.Services;
 using ZapretCLI.Models;
 using ZapretCLI.UI;
 
@@ -190,7 +187,8 @@ namespace ZapretCLI.Core.Managers
                     return false;
                 }
 
-                if (showLogs) {
+                if (showLogs)
+                {
                     AnsiConsole.MarkupLine($"[{ConsoleUI.greenName}]{String.Format(_localizationService.GetString("zapret_start"), _currentProfile.Name)}[/]");
                 }
                 return true;

@@ -1,5 +1,4 @@
-﻿using SharpCompress.Common;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;

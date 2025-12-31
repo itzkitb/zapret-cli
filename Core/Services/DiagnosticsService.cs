@@ -1,13 +1,8 @@
 ﻿using Microsoft.Win32;
 using Spectre.Console;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.ServiceProcess;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using ZapretCLI.Core.Interfaces;
 using ZapretCLI.Core.Logging;
 using ZapretCLI.UI;
