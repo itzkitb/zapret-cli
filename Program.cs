@@ -247,6 +247,39 @@ namespace ZapretCLI
             return true;
         }
 
+        private static void InitializeListFiles()
+        {
+            var listsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lists");
+            Directory.CreateDirectory(listsPath);
+
+            var requiredFiles = new[]
+            {
+                "list-general.txt",
+                "list-general-user.txt",
+                "list-exclude.txt",
+                "list-exclude-user.txt",
+                "ipset-exclude.txt",
+                "ipset-exclude-user.txt"
+            };
+
+            foreach (var fileName in requiredFiles)
+            {
+                var filePath = Path.Combine(listsPath, fileName);
+                if (!File.Exists(filePath))
+                {
+                    try
+                    {
+                        File.WriteAllText(filePath, string.Empty);
+                        _logger.LogInformation($"Created empty list file: {fileName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Failed to create list file {fileName}", ex);
+                    }
+                }
+            }
+        }
+
         private static async Task RunApplicationAsync(string[] args)
         {
             Stopwatch sp = Stopwatch.StartNew();
@@ -265,6 +298,8 @@ namespace ZapretCLI
             _logger.LogInformation($"Host: {Environment.MachineName}, User: {Environment.UserName}");
             _logger.LogInformation($".NET runtime: {Environment.Version}");
             _logger.LogInformation($"Initializing...");
+
+            InitializeListFiles();
 
             var zapretManager = ServiceProvider.GetRequiredService<IZapretManager>();
             var updateService = ServiceProvider.GetRequiredService<IUpdateService>();
