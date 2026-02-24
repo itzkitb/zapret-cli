@@ -5,7 +5,7 @@
     <TargetFramework>net10.0-windows7.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-	<VersionPrefix>1.0.3</VersionPrefix>
+	<VersionPrefix>1.0.4</VersionPrefix>
 	<Authors>SillyApps</Authors>
 	<Description>Donate: https://boosty.to/itzkitb</Description>
 	<PackageProjectUrl></PackageProjectUrl>

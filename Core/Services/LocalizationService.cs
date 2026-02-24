@@ -263,7 +263,10 @@ namespace ZapretCLI.Core.Services
                     { "export_success", "Данные успешно экспортированы в: {0}" },
                     { "export_fail", "Ошибка экспорта данных: {0}" },
                     { "exporting", "Экспорт... Это может занять некоторое время..." },
-                    { "invalid_domain_format", "Неверный формат домена! (Пример: example.com, а не https://example.com)" }
+                    { "invalid_domain_format", "Неверный формат домена! (Пример: example.com, а не https://example.com)" },
+                    { "general_user_list", "Пользовательский основной список" },
+                    { "exclude_user_list", "Пользовательский список исключений" },
+                    { "ipset_exclude_user_list", "Пользовательский IPset исключений" }
                 };
             }
             else if (languageCode == "en")
@@ -470,7 +473,10 @@ namespace ZapretCLI.Core.Services
                     { "exporting", "Exporting... This may take some time..." },
                     { "invalid_domain_format", "Invalid domain format! (Example: example.com, not https://example.com)" },
                     { "update_profiles", "Update profiles and lists" },
-                    { "update_app", "Update Zapret CLI" }
+                    { "update_app", "Update Zapret CLI" },
+                    { "general_user_list", "General user list" },
+                    { "exclude_user_list", "Exclude user list" },
+                    { "ipset_exclude_user_list", "IPset exclude user list" }
                 };
             }
             else

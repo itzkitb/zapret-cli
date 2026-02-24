@@ -27,7 +27,10 @@ namespace ZapretCLI.UI
 ";
 
         private const string GeneralListFileName = "list-general.txt";
+        private const string GeneralUserListFileName = "list-general-user.txt";
         private const string ExcludeListFileName = "list-exclude.txt";
+        private const string ExcludeUserListFileName = "list-exclude-user.txt";
+        private const string IpsetExcludeUserFileName = "ipset-exclude-user.txt";
 
         private static readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
@@ -224,7 +227,10 @@ namespace ZapretCLI.UI
                         .Title($"[{ConsoleUI.greenName}]{_localizationService.GetString("select_list")}[/]\n[gray]{_localizationService.GetString("navigation")}[/]")
                         .AddChoices(new[] {
                             _localizationService.GetString("general_list"),
+                            _localizationService.GetString("general_user_list"),
                             _localizationService.GetString("exclude_list"),
+                            _localizationService.GetString("exclude_user_list"),
+                            _localizationService.GetString("ipset_exclude_user_list"),
                             _localizationService.GetString("back")
                         })
                         .HighlightStyle(new Style(Color.PaleGreen1))
@@ -236,10 +242,15 @@ namespace ZapretCLI.UI
                 string listFile = choice switch
                 {
                     var c when c == _localizationService.GetString("exclude_list") => ExcludeListFileName,
+                    var c when c == _localizationService.GetString("exclude_user_list") => ExcludeUserListFileName,
+                    var c when c == _localizationService.GetString("ipset_exclude_user_list") => IpsetExcludeUserFileName,
+                    var c when c == _localizationService.GetString("general_user_list") => GeneralUserListFileName,
                     _ => GeneralListFileName
                 };
 
                 var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lists", listFile);
+
+                EnsureListFileExists(filePath);
 
                 var domains = new List<string>();
                 try
@@ -352,6 +363,23 @@ namespace ZapretCLI.UI
                             ConsoleUI.Clear();
                         }
                     }
+                }
+            }
+        }
+
+        private static void EnsureListFileExists(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                    File.WriteAllText(filePath, string.Empty);
+                    _logger.LogInformation($"Created empty list file: {filePath}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"Failed to create list file {filePath}: {ex.Message}", ex);
                 }
             }
         }

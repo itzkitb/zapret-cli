@@ -181,6 +181,8 @@ namespace ZapretCLI.Core.Services
             }
 
             var gameFilterPorts = _useGameFilter ? "1024-65535" : "12";
+            var gameFilterTcpPorts = _useGameFilter ? "1024-65535" : "12";
+            var gameFilterUdpPorts = _useGameFilter ? "1024-65535" : "12";
             var finalArguments = new List<string>();
 
             foreach (var arg in profile.Arguments)
@@ -188,7 +190,9 @@ namespace ZapretCLI.Core.Services
                 var processedArg = arg
                     .Replace("%BIN%", $"..\\{_settings.BinPath}\\")
                     .Replace("%LISTS%", $"..\\{_settings.ListsPath}\\")
-                    .Replace("%GameFilter%", gameFilterPorts);
+                    .Replace("%GameFilter%", gameFilterPorts)
+                    .Replace("%GameFilterTCP%", gameFilterTcpPorts)
+                    .Replace("%GameFilterUDP%", gameFilterUdpPorts);
 
                 finalArguments.Add(processedArg);
             }
