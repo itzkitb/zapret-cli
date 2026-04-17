@@ -588,6 +588,13 @@ namespace ZapretCLI.Core.Services
             return filePath;
         }
 
+        /// <summary>
+        /// Initializes the DPI test suite with predefined targets
+        /// </summary>
+        /// <remarks>
+        /// This list of DPI test targets was adapted from https://github.com/hyperion-cs/dpi-checkers
+        /// Copyright (c) hyperion-cs and contributors
+        /// </remarks>
         private List<DpiTarget> InitializeDpiSuite()
         {
             return new List<DpiTarget>
